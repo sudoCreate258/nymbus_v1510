@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nymbus · dtom (2 cameras, local)</title>
+<style>
+  :root{--bg1:#0e1711;--bg2:#1b2a20;--glass:rgba(255,255,255,.06);--line:rgba(255,255,255,.14);
+        --ink:#eef3ee;--dim:#a9b8ad;--accent:#7ed957;--hot:#ffb347;--bad:#ff6b6b;--blue:#6cc4ff}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.45 "Segoe UI",system-ui,sans-serif;color:var(--ink);min-height:100vh;
+    background:radial-gradient(1100px 600px at 10% -10%,rgba(126,217,87,.16),transparent 60%),
+               radial-gradient(900px 500px at 110% 110%,rgba(108,196,255,.12),transparent 60%),
+               linear-gradient(160deg,var(--bg2),var(--bg1))}
+  header{display:flex;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(255,255,255,.07),transparent)}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  .pill{font-size:12px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:2px 10px}
+  main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(320px,1fr);gap:14px;padding:14px}
+  @media(max-width:950px){main{grid-template-columns:1fr}}
+  .card{background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.08)}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin:0 0 8px}
+  #twin{width:100%;aspect-ratio:4/3;display:block;border-radius:10px;cursor:grab;
+    background:radial-gradient(ellipse at 50% 85%,rgba(126,217,87,.12),transparent 55%),#070b08}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+  select,button,input{font:inherit;color:var(--ink);background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+  button{cursor:pointer} button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:linear-gradient(180deg,#8fe66a,#5cb83c);color:#0b1408;border:0;font-weight:600}
+  .cams{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .cam{position:relative;background:#000;border-radius:8px;overflow:hidden;aspect-ratio:4/3}
+  .cam canvas.ov{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;transform-origin:0 0}
+  .cam video{width:100%;height:100%;object-fit:cover;opacity:.0;transition:opacity .2s;transform-origin:0 0}
+  body.showcams .cam video{opacity:1}
+  .cam canvas.src{display:none;width:100%;height:100%;object-fit:cover;opacity:0;transform-origin:0 0}
+  body.showcams .cam canvas.src{opacity:1}
+  .cam .tag{position:absolute;left:6px;top:6px;font-size:11px;background:rgba(0,0,0,.6);padding:2px 6px;border-radius:6px}
+  .cam .tag.primary{background:var(--accent);color:#0b1408}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  td,th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:right}
+  td:first-child,th:first-child{text-align:left} th{color:var(--dim);font-weight:500;font-size:12px}
+  tr.hot td{color:var(--hot);font-weight:600}
+  .muted{color:var(--dim);font-size:12px} .status{margin:6px 0}
+  .ok{color:var(--accent)} .warn{color:var(--hot)} .bad{color:var(--bad)}
+  .meter{height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden}.meter>i{display:block;height:100%;width:0;background:var(--accent)}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .stat{border:1px solid var(--line);border-radius:10px;padding:8px}.stat b{display:block;font-size:20px}
+  footer{padding:0 16px 16px;color:var(--dim);font-size:12px}
+  details{margin-top:8px} summary{cursor:pointer;color:var(--dim)}
+</style>
+</head>
+<body>
+<div id="driveBar" style="display:none;position:fixed;left:0;right:0;top:0;z-index:9998;background:#1b2a1b;border-bottom:1px solid #3a5a3a;padding:10px 14px;font:15px system-ui;color:#cfe8cf;gap:12px;align-items:center;flex-wrap:wrap">
+  <b>Drive setup (parked):</b> <span id="driveCheck">check both camera pictures show your skeleton</span>
+  <button id="driveUpright">Sit tall against the seat, press: set upright (3 s)</button>
+  <button id="driveRoad">Set road ahead (look through the windshield, press)</button>
+  <button id="driveGo">Start driving: screen goes dark</button>
+  <button id="driveCancel">Cancel</button>
+</div>
+<div id="driveScreen" style="display:none;position:fixed;inset:0;z-index:9999;background:#000;color:#3a4a3a;font:16px system-ui;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center">
+  <div style="font-size:22px">Driving: eyes on the road</div>
+  <div id="driveClock">dtom is logging quietly</div>
+  <button id="drivePark" style="background:#111;color:#4a5a4a;border:1px solid #233;padding:14px 28px;font-size:18px">Parked: show summary</button>
+</div>
+<header>
+  <h1>Nymbus · dtom</h1>
+  <span class="pill">2 cameras · runs locally · no video saved</span>
+  <span class="pill" id="modelState">model: not loaded</span>
+</header>
+
+<main>
+  <section class="card">
+    <h2>dtom · your digital twin</h2>
+    <canvas id="twin" width="960" height="720"></canvas>
+    <div class="row">
+      <button id="scanBtn" class="primary" disabled>Start body scan (~40 s)</button>
+      <label class="muted"><input type="checkbox" id="autoScan" checked> auto scan (always learning)</label>
+      <select id="scanMode" title="scan type"><option value="standing">standing scan</option><option value="seated">seated scan</option><option value="walkin">walk-in scan (starts when it sees you head to feet)</option></select>
+      <label class="muted">Twin shows
+        <select id="twinView"><option value="puppet">my body, moving with me</option><option value="model">body model (still)</option><option value="live">raw live shadow</option><option value="coach">posture coach (holds still, flags &amp; fixes)</option><option value="guide">camera placement guide (3D)</option></select></label>
+        <label class="muted">guide for <select id="guideFor"><option value="seated">seated work</option><option value="standing">standing &amp; exercise</option></select></label>
+        <label class="muted">webcam cord <select id="cordLen"><option value="ws">≈ my wingspan</option><option value="1.5">1.5 m</option><option value="3">3 m (with extension)</option><option value="5">5 m (with extension)</option></select></label>
+        <label class="muted">activity <select id="activity"><option value="auto" selected>auto (follows sitting / standing)</option><option value="sitting">sitting at the computer</option><option value="standdesk">standing at a desk</option><option value="phone">standing on the phone</option><option value="driving">driving (screen goes dark, logs quietly)</option></select></label>
+        <label class="muted"><input type="checkbox" id="solid" checked> solid 3D body</label>
+        <label class="muted">avatar <select id="avatar"><option value="human">humanoid (built from your size)</option><option value="tubes">tubes</option></select></label>
+        <label class="muted">legs out of view <select id="legsHidden"><option value="auto">auto (seated if sitting / seat marked)</option><option value="seated">assume seated</option><option value="standing">assume standing</option></select></label>
+        <label class="muted"><input type="checkbox" id="turntable"> slow spin</label>
+      <span class="muted" id="scanInfo">Scan: not started</span>
+    </div>
+    <div class="row"><span class="muted">Props</span>
+      <label class="muted"><input type="checkbox" id="autoProps" checked> spot real objects with the camera</label>
+      <label class="muted"><input type="checkbox" id="propDesk" checked> desk + laptop</label>
+      <label class="muted"><input type="checkbox" id="propPhone" checked> phone</label>
+      <label class="muted"><input type="checkbox" id="propTablet"> tablet</label>
+      <label class="muted"><input type="checkbox" id="propDrink"> drink</label>
+      <label class="muted"><input type="checkbox" id="propFood"> food</label></div>
+    <div class="row"><b id="twinState" class="muted">dtom: learning…</b></div>
+    <div class="row"><label class="muted"><input type="checkbox" id="faceTrack" checked> face tracking (laptop camera)</label> <button id="seatUpright" title="sit tall, back against the chair, 3 s: tells dtom which way is up for each camera while seated">Set upright (sit tall, 3 s)</button> <button id="faceLevel" title="sit tall, look straight ahead at the wall (not the screen), then press">Set level (look straight ahead)</button> <label class="muted">face camera <select id="faceCam"><option value="auto">auto (laptop)</option><option value="A">A</option><option value="B">B</option></select></label> <b id="faceState" class="muted">Face: starting…</b></div>
+    <div class="row"><label class="muted"><input type="checkbox" id="speakOn" checked> dtom speaks: says where it hurts and the fix (first person)</label> <button id="speakTest">Test voice</button> <b id="driveSum" class="muted"></b></div>
+    <div class="row"><label class="muted"><input type="checkbox" id="sendNymbus"> send a 1-minute summary to Nymbus (this computer only, no images)</label>
+      <input id="nymbusToken" type="password" placeholder="paste ingest token once" autocomplete="off" style="width:15em">
+      <span id="sendState" class="muted"></span></div>
+    <div class="row"><label class="muted">body mass <input id="massKg" type="number" value="98" min="30" max="250" step="0.5" style="width:4.5em"> kg</label>
+      <label class="muted"><input type="checkbox" id="strainView" checked> colour dtom by muscle load</label>
+      <label class="muted"><input type="checkbox" id="focusMode" checked> focus a camera on the working muscles + suggest small fixes</label>
+      <select id="poseLabel"><option>neutral sit (back on chair)</option><option>slouch</option><option>forward head (lean to screen)</option><option>elbow on desk / chin rest</option>
+        <option>phone in lap</option><option>phone at eye level</option><option>reaching for mouse</option><option>standing neutral</option><option>standing on phone</option>
+        <option>squat</option><option>hip hinge</option><option>reach overhead</option><option>other</option></select>
+      <button id="recPose">Record posture (3 s)</button> <span class="muted" id="poseInfo">0 postures recorded</span></div>
+    <div class="row"><span class="muted">View</span>
+      <button data-view="front">Front</button><button data-view="quarter">3/4</button><button data-view="side">Side</button><button data-view="back">Back</button><button data-view="top">Top</button>
+      <button id="forgetBtn" title="clears the scan and leg memory saved in this browser">Forget saved scan</button>
+      <span class="muted" id="saveInfo"></span></div>
+    <div class="row muted">Drag to rotate (full 360°, up/down too) · double-click to reset view · orange = joints moving now · green ring = calibrated joint · dim/dashed = remembered (not seen right now)</div>
+    <div class="row">
+      <label class="muted">Shadow memory
+        <select id="memory"><option value="0.15">fast (follows you)</option><option value="0.06" selected>steady (fills in)</option><option value="0.02">slow (holds shape)</option></select></label>
+      <label class="muted"><input type="checkbox" id="mirrorAssist"> mirror in view (use reflection to fill hidden side)</label>
+      <button id="seatBtn" disabled>Mark my seat</button>
+      <button id="resetShadow">Reset shadow</button>
+    </div>
+    <div class="row muted" id="framing">Framing: –</div>
+    <div class="stats">
+      <div class="stat"><span class="muted">Posture</span><b id="posture">–</b></div>
+      <div class="stat"><span class="muted">Primary camera</span><b id="primary">–</b></div>
+      <div class="stat"><span class="muted">L/R asymmetry</span><b id="sym">–</b></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Cameras</h2>
+    <div class="row">
+      <select id="camA"></select><select id="camB"></select>
+    </div>
+    <div class="row">
+      <button id="startBtn" class="primary">Start both cameras</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <label class="muted"><input type="checkbox" id="showCams"> show camera previews</label>
+      <label class="muted">through a mirror: <input type="checkbox" id="aMirror"> A <input type="checkbox" id="bMirror"> B</label>
+      <label class="muted" title="camera is behind you: turns its view 180° so it lines up with the front camera">sees my back: <input type="checkbox" id="aBack"> A <input type="checkbox" id="bBack"> B</label>
+      <label class="muted" title="camera is mounted upside down: dtom turns its picture the right way up">upside down: <input type="checkbox" id="aFlip"> A <input type="checkbox" id="bFlip"> B</label>
+      <label class="muted" title="laptop or camera standing on its side: dtom turns its picture upright">on its side: A <select id="aTurn"><option value="0">no</option><option value="90">turn picture right</option><option value="-90">turn picture left</option></select> B <select id="bTurn"><option value="0">no</option><option value="90">turn picture right</option><option value="-90">turn picture left</option></select></label>
+      <label class="muted" title="brightens a dark picture before tracking; a webcam cannot see in real darkness">night boost <select id="night"><option value="auto">auto</option><option value="off">off</option><option value="on">on</option></select></label>
+      <label class="muted">zoom A <select id="zA"><option value="auto">auto (follows you)</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="3">3×</option></select>
+        B <select id="zB"><option value="auto">auto (follows you)</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="3">3×</option></select></label>
+    </div>
+    <div class="cams">
+      <div class="cam"><video id="vA" playsinline muted></video><canvas class="ov" id="ovA"></canvas><span class="tag" id="tagA">Camera A</span></div>
+      <div class="cam"><video id="vB" playsinline muted></video><canvas class="ov" id="ovB"></canvas><span class="tag" id="tagB">Camera B</span></div>
+    </div>
+    <div id="camTips" style="margin:6px 0;line-height:1.5"></div>
+    <div class="row muted" id="phoneBox">Phone camera: start the page with start.bat to enable pairing.</div>
+    <div class="status" id="status">Pick two different cameras, then Start.</div>
+    <div class="row" style="gap:16px">
+      <div style="flex:1"><div class="muted">Light A <span id="lA">–</span></div><div class="meter"><i id="mA"></i></div></div>
+      <div style="flex:1"><div class="muted">Light B <span id="lB">–</span></div><div class="meter"><i id="mB"></i></div></div>
+    </div>
+
+    <h2 style="margin-top:12px">Standing model (calibration)</h2>
+    <div class="row">
+      <select id="clothing"><option value="gym">Gym wear</option><option value="casual">Casual</option><option value="professional">Professional</option></select>
+      <button id="calBtn" disabled>Capture standing model (3 s)</button>
+      <button id="afterBtn" disabled>Re-scan after session</button>
+    </div>
+    <div class="muted" id="calInfo">Stand facing camera A, whole body visible to at least one camera, arms slightly out.</div>
+
+    <h2 style="margin-top:12px">Joint angles (3D, fused)</h2>
+    <table id="tbl"><thead><tr><th>Joint</th><th>Now</th><th>Standing</th><th>Δ after</th><th>Cam</th></tr></thead><tbody></tbody></table>
+
+    <div class="row" style="margin-top:10px">
+      <input id="note" placeholder="Note (e.g. left hamstring tight after desk day)" style="flex:1">
+    </div>
+    <div class="row"><button id="exportBtn">Export session JSON</button><span class="muted" id="count">0 samples</span> <label class="muted"><input type="checkbox" id="blurOthers" checked> cover other people in the camera previews</label> <button id="forgetAll" title="removes everything dtom keeps in this browser: scan, settings, calibration, queue, token">Delete my dtom data (this browser)</button></div>
+
+    <details><summary>Camera won't start?</summary>
+      <ol class="muted">
+        <li>Open the page from <b>http://localhost</b>, not by double-clicking: in this folder run <code>python -m http.server 8765</code>, then open <code>http://localhost:8765</code>.</li>
+        <li>Allow the camera when the browser asks. If you blocked it earlier: click the lock/camera icon in the address bar → Camera → Allow, then reload.</li>
+        <li>Windows: Settings → Privacy &amp; security → Camera → turn on <i>Camera access</i> and <i>Let desktop apps access your camera</i>.</li>
+        <li>Close Teams/Zoom/the Camera app — Windows lets only one app use a webcam at a time.</li>
+        <li>Two USB cameras on one hub can fail together; plug the external one into a different port.</li>
+      </ol>
+    </details>
+  </section>
+</main>
+<footer>Pose estimation (MediaPipe Pose Landmarker) runs in this browser; model files download once from Google/jsDelivr; frames never leave this PC.
+Each camera gives 3D joint positions; angles are fused per joint from the camera that sees it best. Estimates for trends and left/right comparison, not clinical measurement.</footer>
+
+<script type="module">
+const $=id=>document.getElementById(id);
+const VERSION='0.10.14';
+const CAMS=[{key:'A',ov:$('ovA'),video:$('vA'),sel:$('camA'),tag:$('tagA'),meter:$('mA'),ltxt:$('lA')},
+            {key:'B',ov:$('ovB'),video:$('vB'),sel:$('camB'),tag:$('tagB'),meter:$('mB'),ltxt:$('lB')}];
+CAMS.forEach(c=>{c.vid=c.video;c.sc=document.createElement('canvas');c.sc.className='src';c.vid.after(c.sc);
+  Object.defineProperty(c.sc,'videoWidth',{get(){return this.width;}});Object.defineProperty(c.sc,'videoHeight',{get(){return this.height;}});});
+// ---- source stage: turn a camera on its side upright and brighten a dark picture before anything else sees it ----
+function srcStage(c){
+  const v=c.vid;if(!v.videoWidth)return;const turn=+($(c.key==='A'?'aTurn':'bTurn')?.value||0),nm=$('night')?.value||'auto';
+  if(frame%15===0){const t=c._raw||(c._raw=Object.assign(document.createElement('canvas'),{width:16,height:12}));const x=t.getContext('2d',{willReadFrequently:true});
+    x.drawImage(v,0,0,16,12);const d=x.getImageData(0,0,16,12).data;let s2=0;for(let i=0;i<d.length;i+=4)s2+=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];c.rawLuma=s2/(d.length/4)/255;}
+  if(nm==='on')c.boost=c.rawLuma<.12?3:2;else if(nm==='off')c.boost=0;
+  else{const l=c.rawLuma??.5;if(l<.22)c.boost=l<.12?3:2;else if(l>.3)c.boost=0;}
+  const use=turn!==0||c.boost>0;
+  if(!use){if(c.video!==v){c.video=v;v.style.display='';c.sc.style.display='none';v.parentElement.style.aspectRatio='';}return;}
+  const k=Math.min(1,1280/Math.max(v.videoWidth,v.videoHeight)),vw=Math.round(v.videoWidth*k),vh=Math.round(v.videoHeight*k),w=turn?vh:vw,h=turn?vw:vh,cv=c.sc;
+  if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}
+  const x=cv.getContext('2d');x.save();x.globalCompositeOperation='source-over';
+  const draw=()=>{x.save();if(turn===90){x.translate(w,0);x.rotate(Math.PI/2);}else if(turn===-90){x.translate(0,h);x.rotate(-Math.PI/2);}x.drawImage(v,0,0,vw,vh);x.restore();};
+  draw();x.globalCompositeOperation='screen';for(let i=1;i<(c.boost||1);i++)draw();x.restore();   // screen-blend with itself: lifts the shadows most, no clipping
+  if(c.video!==cv){c.video=cv;v.style.display='none';cv.style.display='block';}
+  v.parentElement.style.aspectRatio=turn?`${w}/${h}`:'';
+}
+let vision=null, running=false, primary=null;
+let standing=null, after=null, samples=[], calBuf=null;
+const prevAngles={}, motion={}, smooth={};
+const twin=$('twin'), g=twin.getContext('2d');
+let yaw=0.6, pitch=0.2, drag=null, viewScale=1;
+
+const I={nose:0,lEar:7,rEar:8,lSh:11,rSh:12,lEl:13,rEl:14,lWr:15,rWr:16,lHip:23,rHip:24,lKn:25,rKn:26,lAn:27,rAn:28,lHeel:29,rHeel:30,lFoot:31,rFoot:32};
+const JOINTS=[
+ ['L shoulder',[I.lEl,I.lSh,I.lHip]],['R shoulder',[I.rEl,I.rSh,I.rHip]],
+ ['L elbow',[I.lSh,I.lEl,I.lWr]],['R elbow',[I.rSh,I.rEl,I.rWr]],
+ ['L hip',[I.lSh,I.lHip,I.lKn]],['R hip',[I.rSh,I.rHip,I.rKn]],
+ ['L knee',[I.lHip,I.lKn,I.lAn]],['R knee',[I.rHip,I.rKn,I.rAn]],
+ ['L ankle',[I.lKn,I.lAn,I.lFoot]],['R ankle',[I.rKn,I.rAn,I.rFoot]]];
+const PAIRS=[['L shoulder','R shoulder'],['L elbow','R elbow'],['L hip','R hip'],['L knee','R knee'],['L ankle','R ankle']];
+const BONES=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[27,29],[29,31],[27,31],[24,26],[26,28],[28,30],[30,32],[28,32]];
+const JOINT_CENTER=Object.fromEntries(JOINTS.map(([n,t])=>[n,t[1]]));
+
+const tbody=$('tbl').querySelector('tbody');
+for(const [n] of [...JOINTS,['Trunk lean'],['Neck forward']]){const tr=document.createElement('tr');tr.dataset.j=n;
+  tr.innerHTML=`<td>${n}</td><td>–</td><td>–</td><td>–</td><td>–</td>`;tbody.appendChild(tr);}
+
+function status(t,c=''){const s=$('status');s.textContent=t;s.className='status '+c;}
+async function listCams(){
+  const devs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+  CAMS.forEach((c,ci)=>{const prev=c.sel.value;c.sel.innerHTML='';
+    devs.forEach((d,i)=>{const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||`Camera ${i+1}`;c.sel.appendChild(o);});
+    if(prev)c.sel.value=prev; else if(devs[ci])c.sel.value=devs[ci].deviceId;});
+  return devs.length;
+}
+async function makeLandmarker(){
+  if(!vision){vision=await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}/vision_bundle.mjs`);}
+  const fs=await vision.FilesetResolver.forVisionTasks(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}/wasm`);
+  return vision.PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'GPU'},runningMode:'VIDEO',numPoses:2});
+}
+// ---- face: real head direction, eye gaze, where the laptop screen is, and mannerisms (camera B = the laptop camera) ----
+let faceLM=null;
+const FACE={level:0,eyeBase:.15,t:0,dir:null,gaze:null,cam:null,camKey:null,pitch:0,yaw:0,roll:0,look:'–',blinks:[],closed:false,yawns:0,jawT:0,yawnOn:false,
+  brow:0,squint:0,handOnFace:0,share:{screen:0,down:0,away:0},log:[],minStart:Date.now(),last:0};
+const faceCamKey=()=>{const v=$('faceCam')?.value;if(v==='A'&&!CAMS[0].off)return 'A';if(v==='B'&&!CAMS[1].off)return 'B';return CAMS[1].off?'A':'B';};
+async function makeFace(){
+  try{const fs=await vision.FilesetResolver.forVisionTasks(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}/wasm`);
+    return await vision.FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'GPU'},
+      runningMode:'VIDEO',numFaces:1,outputFaceBlendshapes:true,outputFacialTransformationMatrixes:true});}catch(e){console.warn('face model unavailable',e);return null;}
+}
+const deg=r=>r*180/Math.PI,rad=d=>d*Math.PI/180;
+function trackFace(c,now){
+  if(!faceLM||!$('faceTrack').checked)return;let r;try{r=faceLM.detectForVideo(c.video,now);}catch(e){return;}
+  if(!r?.faceLandmarks?.length)return;
+  const bs={};for(const b of r.faceBlendshapes?.[0]?.categories||[])bs[b.categoryName]=b.score;
+  const md=r.facialTransformationMatrixes?.[0]?.data;if(!md)return;
+  const colMajor=Math.abs(md[12])+Math.abs(md[13])+Math.abs(md[14])>1e-6;      // translation lives at 12..14 (column-major) or 3,7,11
+  const M=(i,j)=>colMajor?md[j*4+i]:md[i*4+j];
+  const mir=(c.key==='A'&&$('aMirror').checked)||(c.key==='B'&&$('bMirror').checked),sx=mir?-1:1;
+  // camera space: x right, y up, z toward you  →  dtom space: x right, y down, z away from the camera
+  let d={x:sx*M(0,2),y:-M(1,2),z:-M(2,2)};const dl=Math.hypot(d.x,d.y,d.z)||1;d={x:d.x/dl,y:d.y/dl,z:d.z/dl};
+  FACE.noseImg=r.faceLandmarks[0][1];FACE.dirCam={x:M(0,2),y:M(1,2),z:M(2,2)};
+  FACE.dir=d;FACE.cam={x:-sx*M(0,3)/100,y:M(1,3)/100,z:M(2,3)/100};FACE.camKey=c.key;    // the camera, measured from your face (metres)
+  FACE.roll=deg(Math.atan2(M(1,0),M(0,0)));
+  FACE.pitch=deg(Math.atan2(d.y,Math.hypot(d.x,d.z)));FACE.yaw=deg(Math.atan2(d.x,-d.z));
+  // eyes: blendshapes say how far the eyes look down/up/sideways from where the head points (~30° at full)
+  const avg=(a,b)=>((bs[a]||0)+(bs[b]||0))/2;
+  const ev=(avg('eyeLookDownLeft','eyeLookDownRight')-avg('eyeLookUpLeft','eyeLookUpRight'))*30;
+  const eh=(((bs.eyeLookOutLeft||0)+(bs.eyeLookInRight||0))-((bs.eyeLookOutRight||0)+(bs.eyeLookInLeft||0)))/2*30*sx;
+  const gp=rad(FACE.pitch+ev),gy=rad(FACE.yaw+eh);FACE.gaze={x:Math.cos(gp)*Math.sin(gy),y:Math.sin(gp),z:-Math.cos(gp)*Math.cos(gy)};
+  // where the eyes land: laptop screen (just below its camera), down (lap / phone) or away
+  const tc=FACE.cam,tl=Math.hypot(tc.x,tc.y,tc.z)||1,cp=deg(Math.atan2(tc.y,Math.hypot(tc.x,tc.z))),cy=deg(Math.atan2(tc.x,-tc.z));
+  const dp=FACE.pitch+ev-cp,dy=FACE.yaw+eh-cy;
+  const angTo=(v)=>{const l=Math.hypot(v.x,v.y,v.z)||1,g=FACE.gaze;return deg(Math.acos(Math.max(-1,Math.min(1,(g.x*v.x+g.y*v.y+g.z*v.z)/l))));};
+  const toScreen={x:tc.x,y:tc.y+.11,z:tc.z};   // screen centre ~11 cm below its camera, along the camera's own "down"
+  FACE.look=(c.key==='B'&&(angTo(tc)<18||angTo(toScreen)<22))?'screen':(FACE.pitch+ev-FACE.level>35?'down':'away');
+  FACE.gp=FACE.pitch+ev;FACE.gy=FACE.yaw+eh;if(actv()==='driving')driveFace(Date.now());
+  // mannerisms
+  const t=Date.now(),eb=avg('eyeBlinkLeft','eyeBlinkRight');if(eb<FACE.eyeBase+.15)FACE.eyeBase=FACE.eyeBase*.98+eb*.02;
+  FACE.eyeMax=Math.max(eb,(FACE.eyeMax||0)*.9995);const span=Math.max(.12,FACE.eyeMax-FACE.eyeBase);   // glasses squash the blink score: scale to your own range
+  const closed=FACE.closed?eb>FACE.eyeBase+.35*span:eb>FACE.eyeBase+.55*span;   // relative to your own open-eye level and your own fullest blink
+  if(closed&&!FACE.closed)FACE.blinks.push(t);FACE.closed=closed;FACE.blinks=FACE.blinks.filter(x=>t-x<60000);
+  const jaw=bs.jawOpen||0;if(jaw>.55){if(!FACE.jawT)FACE.jawT=t;if(t-FACE.jawT>1200&&!FACE.yawnOn){FACE.yawnOn=true;FACE.yawns++;}}else if(jaw<.3){FACE.jawT=0;FACE.yawnOn=false;}
+  FACE.brow=FACE.brow*.95+avg('browDownLeft','browDownRight')*.05;FACE.squint=FACE.squint*.95+avg('eyeSquintLeft','eyeSquintRight')*.05;
+  const lm=c.res?.landmarks?.length?c.res.landmarks.reduce((a,b)=>bodySize(b)>bodySize(a)?b:a):null;
+  if(lm){const n=lm[0],near=[15,16,19,20].some(i=>(lm[i].visibility??0)>.5&&Math.hypot(lm[i].x-n.x,lm[i].y-n.y)<.12);FACE.handOnFace=near?Math.min(1,FACE.handOnFace+.1):Math.max(0,FACE.handOnFace-.05);}
+  const dt=FACE.last?Math.min(.5,(now-FACE.last)/1000):0;FACE.last=now;FACE.share[FACE.look==='screen'?'screen':FACE.look==='down'?'down':'away']+=dt;
+  if(t-FACE.minStart>60000){const tot=Object.values(FACE.share).reduce((a,b)=>a+b,0)||1;
+    FACE.log.push({t:new Date().toISOString(),blinks_per_min:FACE.blinks.length,yawns:FACE.yawns,brow_tension:+FACE.brow.toFixed(2),squint:+FACE.squint.toFixed(2),
+      looking:Object.fromEntries(Object.entries(FACE.share).map(([k,v])=>[k,Math.round(100*v/tot)])),head_pitch:Math.round(FACE.pitch),head_roll:Math.round(FACE.roll)});
+    FACE.share={screen:0,down:0,away:0};FACE.minStart=t;}
+  FACE.t=performance.now();
+}
+function faceNotes(){
+  const n=[],fresh=performance.now()-FACE.t<1000;if(!fresh)return n;
+  const bpm=FACE.blinks.length,full=Date.now()-(FACE.started||(FACE.started=Date.now()))>60000;
+  if(full&&bpm<8)n.push([`blinking ${bpm}/min — screens cut blinking; look away and blink a few times (aim 12+/min)`,'rgba(255,179,71,.95)']);
+  if(FACE.brow>.45)n.push(['brow tense — relax your face; check screen distance and text size','rgba(255,179,71,.95)']);
+  if(FACE.squint>.5)n.push(['squinting — more light on the screen side, or bigger text','rgba(255,179,71,.95)']);
+  if(Math.abs(FACE.roll)>10)n.push([`head tilted ${Math.abs(FACE.roll).toFixed(0)}° to the side`,'rgba(255,179,71,.95)']);
+  if(FACE.handOnFace>.7)n.push(['hand on your face — chin/cheek rest loads the neck to one side','rgba(255,179,71,.95)']);
+  if(FACE.yawns)n.push([`${FACE.yawns} yawn${FACE.yawns>1?'s':''} this session`,'rgba(238,243,238,.6)']);
+  return n;
+}
+setInterval(()=>{const el=$('faceState');if(!el)return;const fresh=performance.now()-FACE.t<1000;
+  if(!$('faceTrack').checked){el.textContent='Face: off';return;}
+  if(!faceLM){el.textContent='Face: model not loaded yet';return;}
+  if(!fresh){el.textContent='Face: not visible to the laptop camera';el.style.color='';return;}
+  el.textContent=`Face: looking ${FACE.look==='screen'?'at the screen':FACE.look} · head ${Math.abs(FACE.pitch-FACE.level).toFixed(0)}° ${FACE.pitch-FACE.level>=0?'down':'up'}, turned ${Math.abs(FACE.yaw).toFixed(0)}°, tilted ${Math.abs(FACE.roll).toFixed(0)}° · blinks ${FACE.blinks.length}/min · brow ${FACE.brow>.45?'tense':'relaxed'} · yawns ${FACE.yawns}`;
+  el.style.color=faceNotes().some(x=>x[1].includes('179'))?'var(--hot)':'var(--accent)';},1000);
+// ---- static muscle load: body-segment weights x lever arms (inverse statics), as % of a rough maximum (%MVC) ----
+// Segment masses: Winter/Dempster fractions of body mass. Max moments: order-of-magnitude healthy adult male values.
+// Sustained static load above ~10% of max is where fatigue builds; this is an estimate, not a measurement of the muscle.
+let lastFused={},recBuf=null,lastViews=[];const poseSamples=[];
+const MVC={neck:35,back:220,shL:55,shR:55};
+const strain={pct:{neck:0,back:0,shL:0,shR:0},nm:{},dose:{neck:0,back:0,shL:0,shR:0},fat:{neck:0,back:0,shL:0,shR:0},last:0,sitStart:0,standT:0,posStart:Date.now(),prevM:null};
+function computeStrain(M){
+  const kg=parseFloat($('massKg').value)||98,G=9.81,fwd=M.fwd||{x:0,y:0,z:-1},now=performance.now();
+  const ahead=(q,o)=>{const v=v3(q,o);return v.x*fwd.x+v.z*fwd.z;},flat=(q,o)=>Math.hypot(q.x-o.x,q.z-o.z);
+  const lerp=(a,b,t)=>({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,z:a.z+(b.z-a.z)*t});
+  const sh=m3(M[11],M[12]),hp=m3(M[23],M[24]),ear=M[7]&&M[8]?m3(M[7],M[8]):M[0],headC=lerp(ear,M[0],.35);
+  // neck extensors: head weight x how far the head sits in front of the shoulders
+  const neck=.081*kg*G*Math.max(0,ahead(headC,sh)-.03);   // ~3 cm forward of the shoulder joints is neutral
+  // shoulders: arm (+ anything held) weight x horizontal reach; a hanging or resting arm counts as supported
+  const held={L:0,R:0};if(typeof live==='function'&&live('phone')&&seenObj.phone.hand)held[seenObj.phone.hand]=.2;
+  const arm=(s,e,w,k)=>{const ua=lerp(s,e,.436),fa=lerp(e,w,.43);
+    const resting=w.y>e.y+.05&&w.y>hp.y-.12;   // hand at or below lap level, below the elbow
+    const onDesk=Math.abs(w.y-e.y)<.08&&ahead(w,e)>.12;   // forearm level and reaching forward: likely resting on the desk
+    if(onDesk){strain.desk=true;return G*kg*.028*flat(ua,s);}
+    return resting?0:G*kg*(.028*flat(ua,s)+.016*flat(fa,s)+.006*flat(w,s))+G*held[k]*flat(w,s);};
+  strain.desk=false;const shL=arm(M[11],M[13],M[15],'L'),shR=arm(M[12],M[14],M[16],'R');
+  // low back extensors: upper-body weight x how far it sits in front of the hips (a backrest takes this when you lean back)
+  const trunkC=lerp(hp,sh,.55);
+  const back=Math.max(0,G*kg*(.36*ahead(trunkC,hp)+.081*ahead(headC,hp)+.05*ahead(lerp(M[11],M[15],.4),hp)+.05*ahead(lerp(M[12],M[16],.4),hp)));
+  strain.noSide=!sideFresh();
+  strain.nm={neck:strain.noSide?0:neck,back:strain.noSide?0:back,shL,shR};
+  const tv=v3(sh,hp),lean=deg(Math.atan2(Math.max(0,tv.x*fwd.x+tv.z*fwd.z),-tv.y));
+  strain.metric={neck:Math.max(0,(ahead(headC,sh)-.03)*100),back:lean,shL:flat(M[15],M[11])*100,shR:flat(M[16],M[12])*100};
+  updateFocus();
+  const dt=strain.last?Math.min(.5,(now-strain.last)/1000):0;strain.last=now;
+  for(const k of Object.keys(MVC)){const pc=100*strain.nm[k]/MVC[k];strain.pct[k]=strain.pct[k]*.9+pc*.1;if(strain.pct[k]>10)strain.dose[k]+=dt;
+    // endurance time for a held load: power law ET(s) = 14.86 * f^-1.83 (f = fraction of max); halved rate here: ~35 min at 10%, ~9 min at 20% to the 'take a break' point
+    const f=strain.pct[k]/100;if(f>.05)strain.fat[k]=Math.min(1.5,strain.fat[k]+dt/(2*14.86*Math.pow(f,-1.83)));   /* x2: the load itself is an estimate, so err on the slow side */else strain.fat[k]*=Math.exp(-dt/240);}
+  try{reliefStep(M,fwd,dt);}catch(e){}
+  // how long you've held roughly this position
+  if(strain.prevM){let mv=0;for(const i of [0,11,12,13,14,15,16,23,24])if(M[i]&&strain.prevM[i])mv+=d3(M[i],strain.prevM[i]);
+    if(mv>.6){strain.posStart=Date.now();strain.prevM=M.map(q=>q&&{...q});}}else strain.prevM=M.map(q=>q&&{...q});
+  // hip flexors: continuous sitting time (you flagged hip flexor compression)
+  const post=$('posture').textContent;
+  if(post==='standing'){if(!strain.standStart)strain.standStart=Date.now();}else strain.standStart=0;
+  const seatedNow=post==='sitting'||(post!=='standing'&&!!M.seated);   // legs hidden under a desk still count as sitting
+  if(seatedNow){if(!strain.sitStart)strain.sitStart=Date.now();strain.standT=0;}
+  else if(post==='standing'){strain.standT+=dt;if(strain.standT>30)strain.sitStart=0;}
+  lowerStep(M,dt,seatedNow,post==='standing');
+}
+// ---- lower body: the cameras rarely see it working, so it is tracked by time-in-position (dose), as % of a sensible limit ----
+const LOWER={lumbar:{state:'',s:0},pct:{hipflex:0,calf:null,knee:0,hang:0,ham:0},stillStart:0,legRef:null,legT:0,kneeS:0,hangS:0,m:{knee_locked_s:0,hip_hang_s:0}};
+function lowerStep(M,dt,seated,standing){
+  const L=LOWER,now=Date.now(),f=lastFused||{},fresh=i=>performance.now()-shadow.seen[i]<1000;
+  L.pct.hipflex=seated&&strain.sitStart?100*(now-strain.sitStart)/(40*60000):0;            // hip flexors folded: act at 40 min
+  if(seated&&[25,26,27,28].some(fresh)){                                                    // calf pump: legs still while seated, act at 30 min
+    const pts=[25,26,27,28].map(i=>M[i]);if(!L.legRef||now-L.legT>2000){
+      const mv=L.legRef?pts.reduce((a,q,k)=>a+Math.hypot(q.x-L.legRef[k].x,q.y-L.legRef[k].y,q.z-L.legRef[k].z),0):1;
+      if(mv>.08||!L.stillStart)L.stillStart=now;L.legRef=pts.map(q=>({...q}));L.legT=now;}
+    L.pct.calf=100*(now-L.stillStart)/(30*60000);}
+  else if(!seated){L.pct.calf=0;L.stillStart=0;}else L.pct.calf=null;                        // seated but legs unseen: unknown, not zero
+  const locked=standing&&[f['L knee'],f['R knee']].filter(v=>v!=null).length===2&&f['L knee']>172&&f['R knee']>172;
+  L.kneeS=locked?L.kneeS+dt:Math.max(0,L.kneeS-dt*3);if(locked)L.m.knee_locked_s+=dt;L.pct.knee=100*L.kneeS/300;   // locked knees standing: act at 5 min
+  const hang=standing&&frontFresh(lastFrontHips)&&Math.abs(M[23].y-M[24].y)*100>3;
+  L.hangS=hang?L.hangS+dt:Math.max(0,L.hangS-dt*3);if(hang)L.m.hip_hang_s+=dt;L.pct.hang=100*L.hangS/300;           // hanging on one hip: act at 5 min
+  L.pct.ham=seated?100*(STRETCH.run.knee||0)/600:0;                                          // legs out straight: act at 10 min
+  // lumbar (indirect: no spine points): hips slid forward + head forward = slumped; hips folded + leaning in = rounded forward
+  const hpA=[f['L hip'],f['R hip']].filter(v=>v!=null),hip=hpA.length?hpA.reduce((a,b)=>a+b,0)/hpA.length:null,met=strain.metric||{};
+  const st=!seated||hip==null||strain.noSide?'':hip>115&&(met.neck||0)>4?'slumped':hip<85&&(met.back||0)>15?'rounded':'';
+  if(st&&st===L.lumbar.state)L.lumbar.s+=dt;else L.lumbar={state:st,s:0};
+  if(st)L.m[st+'_s']=(L.m[st+'_s']||0)+dt;
+  L.pct.lumbar=st?100*L.lumbar.s/300:0;                                                       // held 5 min: act
+}
+function lowerLine(){const lu=LOWER.lumbar,pre=lu.state?[[`low back ${lu.state==='slumped'?'slumped (hips slid forward, back rounding)':'rounded forward over the hips'} for ${Math.round(lu.s/60)} min — ${lu.state==='slumped'?'slide hips back to the backrest, sit tall':'sit back, bring the work closer'}`,lu.s>=300?'rgba(255,110,100,.95)':'rgba(255,179,71,.95)']]:[];
+  return [...pre,...lowerLineBase()];}
+function lowerLineBase(){const p=LOWER.pct,fm=v=>v==null?'–':Math.min(999,Math.round(v))+'%',mx=Math.max(p.hipflex,p.calf||0,p.knee,p.hang,p.ham);
+  const out=[[`lower body (time in position, % of limit): hip flexors ${fm(p.hipflex)} · calves ${fm(p.calf)} · hamstrings ${fm(p.ham)} · knees locked ${fm(p.knee)} · hip hang ${fm(p.hang)}`,mx>=100?'rgba(255,110,100,.95)':mx>=60?'rgba(255,179,71,.95)':'rgba(126,217,87,.9)']];
+  if(p.calf>=100)out.push(['calves have not moved in 30 min — ankle circles or a short walk (circulation)','rgba(255,110,100,.95)']);
+  if(p.knee>=100)out.push(['knees locked while standing — soften them slightly and shift your weight','rgba(255,110,100,.95)']);
+  if(p.hang>=100)out.push(['hanging on one hip — weight even on both feet','rgba(255,110,100,.95)']);
+  if(p.ham>=100)out.push(['legs stretched out 10+ min — bend the knees, feet flat','rgba(255,179,71,.95)']);
+  return out;}
+const loadRGB=pc=>pc<10?[110,220,120]:pc<20?[255,190,80]:[255,90,75];
+function strainRGB(i){const p=strain.pct;
+  if([0,7,8].includes(i))return loadRGB(p.neck);if([11,23].includes(i))return loadRGB(Math.max(p.back,i===11?p.shL:0));
+  if([12,24].includes(i))return loadRGB(Math.max(p.back,i===12?p.shR:0));if([13,15].includes(i))return loadRGB(p.shL);if([14,16].includes(i))return loadRGB(p.shR);
+  const lp=LOWER.pct,lc=v=>v==null?[150,205,160]:v<60?[110,220,120]:v<100?[255,190,80]:[255,90,75];
+  if([25,26].includes(i))return lc(Math.max(lp.hipflex,lp.knee,lp.ham));if([27,28,29,30,31,32].includes(i))return lc(lp.calf==null?null:Math.max(lp.calf,lp.knee));
+  return [150,205,160];}
+// ---- focus: the region carrying the most load gets a camera zoomed onto it and one small, measurable fix ----
+const FOCUS={region:null,since:0,goodSince:0,cam:null};
+const REGION={neck:{name:'neck / upper traps',joints:[0,7,8,11,12],cam:'B',
+    fix:m=>`bring your head back ${m.toFixed(1)} cm — ears over shoulders (small chin tuck)`,goal:'0 cm',good:m=>m<1},
+  back:{name:'low back (erectors)',joints:[11,12,23,24],cam:'A',
+    fix:m=>['sitting','driving'].includes(actv())?`sit back ${Math.max(0,m-8).toFixed(0)}° — slide hips to the backrest, let it take you`:`you're hinged ${m.toFixed(0)}° forward at the hips — raise the work or step closer, stack shoulders over hips`,goal:'≤ 8°',good:m=>m<=8},
+  shL:{name:'left shoulder / upper trap',joints:[11,13,15],cam:'A',
+    fix:m=>`left hand is ${m.toFixed(0)} cm out — bring it ${Math.max(0,m-30).toFixed(0)} cm closer or rest the forearm`,goal:'≤ 30 cm',good:m=>m<=30},
+  shR:{name:'right shoulder / upper trap',joints:[12,14,16],cam:'A',
+    fix:m=>`right hand is ${m.toFixed(0)} cm out — bring it ${Math.max(0,m-30).toFixed(0)} cm closer or rest the forearm`,goal:'≤ 30 cm',good:m=>m<=30}};
+function updateFocus(){
+  if(!$('focusMode').checked){FOCUS.region=null;return;}
+  const p=strain.pct,cand=Object.keys(REGION).filter(k=>p[k]>=8).sort((a,b)=>p[b]-p[a]),best=cand[0]||null,now=Date.now();
+  if(best!==FOCUS.region){
+    const cur=FOCUS.region;
+    if(!cur||!best&&p[cur]<5&&now-FOCUS.since>3000||best&&(p[best]>p[cur]+5||p[cur]<5)){FOCUS.region=best;FOCUS.since=now;FOCUS.goodSince=0;if(best)minuteEvent('focus',best);}}
+  if(FOCUS.region){const k=FOCUS.region,want=REGION[k].cam;FOCUS.cam=CAMS.find(c=>c.key===want&&!c.off)?want:CAMS.find(c=>!c.off)?.key;}
+  else FOCUS.cam=null;
+}
+function focusLines(){
+  if(!FOCUS.region||!strain.metric)return [];
+  const k=FOCUS.region,R=REGION[k],m=strain.metric[k];
+  if(R.good(m)){if(!FOCUS.goodSince)FOCUS.goodSince=Date.now();}else FOCUS.goodSince=0;
+  const held=FOCUS.goodSince?(Date.now()-FOCUS.goodSince)/1000:0;
+  const lines=[[`focus: ${R.name} — camera ${FOCUS.cam} zoomed in`,'rgba(108,196,255,.95)']];
+  lines.push(R.good(m)?[`✓ good — hold it (${held.toFixed(0)} s)`,'rgba(126,217,87,.95)']:[`→ ${R.fix(m)} (aim ${R.goal})`,'rgba(255,230,140,.95)']);
+  return lines;
+}
+// ---- relief: self-massage or a held stretch = you felt tension there. Logged as evidence for that region, and the fatigue estimate eases ----
+const RELIEF={hist:{15:[],16:[]},cur:{},last:null,lastSay:0};
+const RNAME={lumbar:'lower back',hipflex:'hip flexors',calf:'calves',kneelock:'knees',hang:'hips',neck:'neck',back:'low back',shL:'left shoulder',shR:'right shoulder',jaw:'jaw / temples'};
+function reliefStep(M,fwd,dt){
+  if(!dt)return;const now=performance.now(),d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z),mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2,z:(a.z+b.z)/2});
+  const sh=mid(M[11],M[12]),hp=mid(M[23],M[24]),ear=M[7]&&M[8]?mid(M[7],M[8]):M[0],neckP={x:sh.x+(ear.x-sh.x)*.35,y:sh.y+(ear.y-sh.y)*.35,z:sh.z+(ear.z-sh.z)*.35};
+  const seen=i=>now-shadow.seen[i]<500,act={};
+  for(const [w,own,opp] of [[15,'shL','shR'],[16,'shR','shL']]){
+    if(!seen(w)){RELIEF.hist[w]=[];continue;}const h=RELIEF.hist[w];h.push({t:now,p:{...M[w]}});while(h.length&&now-h[0].t>1000)h.shift();
+    let path=0;for(let i=1;i<h.length;i++)path+=d(h[i].p,h[i-1].p);const moving=path>.08&&h.length>5;   // rubbing: the hand keeps moving but stays put
+    const hand=M[w],oppSh=M[opp==='shL'?11:12],ownSh=M[own==='shL'?11:12],behind=(hand.x-hp.x)*fwd.x+(hand.z-hp.z)*fwd.z<-.05;
+    if(d(hand,M[0])<.12){if(moving)act['massage:jaw']=1;}
+    else if(d(hand,neckP)<.13){if(moving)act['massage:neck']=1;}
+    else if(d(hand,oppSh)<.13){act[(moving?'massage:':'stretch:')+(moving?opp:own)]=1;}   // hand on the other shoulder: rubbing it, or arm pulled across (stretch)
+    else if(d(hand,hp)<.2&&behind&&moving)act['massage:back']=1;
+  }
+  const fr=now-FACE.t<1000;
+  if(fr&&Math.abs(FACE.roll)>20)act['stretch:neck']=1;                                     // ear toward shoulder
+  if(fr&&Math.abs(FACE.yaw)>50&&actv()!=='driving')act['stretch:neck']=1;                   // look over the shoulder (not at the wheel)
+  if(seen(15)&&seen(16)&&M[15].y<M[0].y-.05&&M[16].y<M[0].y-.05)act['stretch:shL']=act['stretch:shR']=act['stretch:back']=1;   // arms overhead
+  const tv={x:sh.x-hp.x,y:sh.y-hp.y,z:sh.z-hp.z};if(tv.x*fwd.x+tv.z*fwd.z<-.12&&!M.seated)act['stretch:back']=1;   // leaning back, standing
+  const sd=Math.atan2(M[11].z-M[12].z,M[11].x-M[12].x)-Math.atan2(M[23].z-M[24].z,M[23].x-M[24].x),tw=Math.abs(Math.atan2(Math.sin(sd),Math.cos(sd)))*180/Math.PI;
+  if(tw>30)act['stretch:back']=1;                                                            // seated twist
+  for(const k of Object.keys(act)){const c=RELIEF.cur[k]||(RELIEF.cur[k]={t0:now,s:0});c.s+=dt;c.seen=now;
+    const r=k.split(':')[1];if(strain.fat[r]!=null)strain.fat[r]*=Math.exp(-dt/60);}            // easing off a held load lets it recover faster
+  for(const [k,c] of Object.entries(RELIEF.cur)){if(now-c.seen<1500)continue;delete RELIEF.cur[k];
+    const [kind,r]=k.split(':'),need=kind==='massage'?3:5;if(c.s<need)continue;
+    const ev={t:new Date().toISOString(),kind,region:r,s:Math.round(c.s),load_pct:strain.pct[r]!=null?Math.round(strain.pct[r]*10)/10:null,fatigue:strain.fat[r]!=null?Math.round(100*strain.fat[r]):null};
+    RELIEF.last={...ev,at:now};if(!MINUTE.start)resetMinute();(MINUTE.relief||(MINUTE.relief=[])).push(ev);
+    if($('speakOn')?.checked&&!DRIVE.phase&&Date.now()-RELIEF.lastSay>300000){RELIEF.lastSay=Date.now();speak(`That helps my ${RNAME[r]||r}.`);}}
+}
+function reliefLine(){const L=RELIEF.last;if(!L||performance.now()-L.at>20000)return null;
+  return [`relief: ${L.kind==='massage'?'massaging':'stretching'} your ${RNAME[L.region]||L.region} for ${L.s} s — noted as tension there`,'rgba(108,196,255,.95)'];}
+function strainLines(){
+  const p=strain.pct,f=v=>v.toFixed(0)+'%',col=v=>v<10?'rgba(126,217,87,.9)':v<20?'rgba(255,179,71,.95)':'rgba(255,110,100,.95)';
+  const worst=Math.max(p.neck,p.back,p.shL,p.shR),out=strain.noSide?[['neck & low-back load: need a camera to see your side (hips + shoulders)','rgba(238,243,238,.6)']]:[];out.push([`muscle load (est., % of max): neck ${f(p.neck)} · low back ${f(p.back)} · L shoulder ${f(p.shL)} · R shoulder ${f(p.shR)}`+(strain.desk?' (forearms assumed resting on desk)':''),col(worst)]);
+  const rl=reliefLine();if(rl)out.push(rl);
+  const foc=FOCUS.region;
+  if(p.neck>=10&&foc!=='neck')out.push(['neck extensors / upper traps working to hold your head forward — ears back over shoulders',col(p.neck)]);
+  if((p.shL>=10||p.shR>=10)&&foc!=='shL'&&foc!=='shR')out.push(['front shoulder / upper trap holding your arm out — bring the keyboard/mouse closer or rest your forearms',col(Math.max(p.shL,p.shR))]);
+  if(p.back>=10&&foc!=='back')out.push(['low-back muscles holding you leaning forward — sit back so the chair takes it',col(p.back)]);
+  const ft=strain.fat,fmax=Math.max(ft.neck,ft.back,ft.shL,ft.shR),fp=v=>Math.round(100*Math.min(1,v))+'%';
+  if(fmax>.1)out.push([`fatigue from holding (load × time): neck ${fp(ft.neck)} · low back ${fp(ft.back)} · shoulders ${fp(ft.shL)}/${fp(ft.shR)}`,fmax>.6?'rgba(255,110,100,.95)':fmax>.3?'rgba(255,179,71,.95)':'rgba(126,217,87,.9)']);
+  if(fmax>.6){const k=Object.entries(ft).sort((a,b)=>b[1]-a[1])[0][0];out.push([`${{neck:'neck',back:'low back',shL:'left shoulder',shR:'right shoulder'}[k]} has held its load a long time — move or take a 1-minute break`,'rgba(255,110,100,.95)']);}
+  const held=(Date.now()-strain.posStart)/60000;if(held>=10)out.push([`same position ${held.toFixed(0)} min`,held>=25?'rgba(255,179,71,.95)':'rgba(238,243,238,.6)']);
+  const sit=strain.sitStart?(Date.now()-strain.sitStart)/60000:0;
+  const stood=strain.standStart?(Date.now()-strain.standStart)/60000:0;
+  if(stood>=45)out.push([`standing ${stood.toFixed(0)} min — shift weight, walk a minute, or sit for a while`,'rgba(255,179,71,.95)']);
+  if(sit>=40)out.push([`seated ${sit.toFixed(0)} min — hip flexors stay shortened; stand / lunge stretch for a minute`,'rgba(255,179,71,.95)']);
+  out.push(...lowerLine());
+  return out;
+}
+function poseSnapshot(M){const m=measures(M);return {angles:{...lastFused},measures:m,load_pct:{...strain.pct},load_nm:{...strain.nm},
+  look:performance.now()-FACE.t<1000?FACE.look:null,head_pitch:performance.now()-FACE.t<1000?FACE.pitch:null};}
+function avgSnap(buf){
+  const out={},walk=(objs,path)=>{const o={};const keys=new Set(objs.flatMap(x=>x&&typeof x==='object'?Object.keys(x):[]));
+    for(const k of keys){const vals=objs.map(x=>x?.[k]).filter(v=>v!=null);
+      if(vals.length&&typeof vals[0]==='number')o[k]=Math.round(10*vals.reduce((a,b)=>a+b,0)/vals.length)/10;
+      else if(vals.length&&typeof vals[0]==='object')o[k]=walk(vals);
+      else if(vals.length){const c={};vals.forEach(v=>c[v]=(c[v]||0)+1);o[k]=Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0];}}return o;};
+  return walk(buf);
+}
+async function recordPose(){
+  const label=$('poseLabel').value,btn=$('recPose');btn.disabled=true;
+  for(const n of [3,2,1]){btn.textContent='Get into position… '+n;await new Promise(r=>setTimeout(r,1000));}
+  recBuf=[];btn.textContent='Hold still… recording';await new Promise(r=>setTimeout(r,3000));
+  const buf=recBuf;recBuf=null;btn.disabled=false;btn.textContent='Record posture (3 s)';
+  if(!buf.length){$('poseInfo').textContent='nothing recorded — dtom needs a finished scan and "my body, moving with me"';return;}
+  const rec={label,at:new Date().toISOString(),frames:buf.length,cameras:CAMS.filter(c=>!c.off).map(c=>c.key),side_view:sideFresh(),...avgSnap(buf)};
+  poseSamples.push(rec);minuteEvent('posture_sample',null);
+  const p=rec.load_pct||{};$('poseInfo').textContent=`${poseSamples.length} recorded · last: ${label} — neck ${p.neck??'–'}%, back ${p.back??'–'}%, shoulders ${p.shL??'–'}/${p.shR??'–'}%`;
+}
+// ---- Nymbus: a 1-minute summary (nymbus.twin_minute.v1) posted to the local Nymbus app; never images ----
+// ---- drive mode: dark screen, no hints; glances off the road, eyes closed, mirror checks and stretch time are logged ----
+const DRIVE={phase:'',on:false,t0:0,roadPitch:null,roadYaw:0,off:false,offT:0,offKind:'',closedT:0,lastBeep:0,wake:null,
+  tot:{offroad:0,glances:0,long:0,max:0,mirror:0,closed:0,phone:0,min:0},m:null};
+const driveZero=()=>({offroad_s:0,glances:0,long_glances:0,max_glance_s:0,mirror_checks:0,eyes_closed_events:0,phone_in_hand_s:0});
+let actx=null;function beep(f,d,n){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();actx.resume();
+  for(let i=0;i<(n||1);i++){const o=actx.createOscillator(),g2=actx.createGain(),t=actx.currentTime+i*(d+.08);o.frequency.value=f;g2.gain.setValueAtTime(.15,t);g2.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g2);g2.connect(actx.destination);o.start(t);o.stop(t+d);}}catch(e){}}
+function driveFace(t){
+  const D=DRIVE;if(!D.m)D.m=driveZero();const rp=D.roadPitch??FACE.level??0,dp=FACE.gp-rp,dy=FACE.gy-D.roadYaw;
+  if(D.phase!=='drive')return;
+  const st=dp>20||dp<-20?'off':Math.abs(dy)>20?'side':'road';   // side = mirrors / shoulder checks
+  FACE.look=st==='off'&&dp>20?'down':'away';
+  if(st!==(D.st||'road')){const prev=D.st||'road';
+    if(prev!=='road'){const s=(t-D.offT)/1000;
+      if(prev==='side'&&s<2){D.m.mirror_checks++;D.tot.mirror++;}
+      else{D.m.glances++;D.tot.glances++;D.m.offroad_s+=s;D.tot.offroad+=s;if(s>2){D.m.long_glances++;D.tot.long++;}
+        D.m.max_glance_s=Math.max(D.m.max_glance_s,+s.toFixed(1));D.tot.max=Math.max(D.tot.max,s);}}
+    D.st=st;D.offT=t;}
+  if(st!=='road'&&t-D.offT>2000&&t-D.lastBeep>15000){D.lastBeep=t;beep(880,.12,1);}
+  if(FACE.closed){if(!D.closedT)D.closedT=t;else if(t-D.closedT>1000&&!D.closedHit){D.closedHit=true;D.m.eyes_closed_events++;D.tot.closed++;beep(660,.25,3);}}
+  else{D.closedT=0;D.closedHit=false;}
+}
+function setDrive(on){
+  const D=DRIVE;if(on===D.on)return;D.on=on;$('driveScreen').style.display=on?'flex':'none';$('driveBar').style.display='none';
+  if(on){D.t0=Date.now();D.tot={offroad:0,glances:0,long:0,max:0,mirror:0,closed:0,phone:0,min:0};D.m=driveZero();$('legsHidden').value='seated';
+    beep(520,.08,1);try{navigator.wakeLock?.request('screen').then(w=>D.wake=w).catch(()=>{});}catch(e){}}
+  else{try{D.wake?.release();}catch(e){}D.wake=null;const T=D.tot,min=((Date.now()-D.t0)/60000);
+    $('driveSum').textContent=`Last drive ${min.toFixed(0)} min · glances off the road ${T.glances} (${T.long} over 2 s, longest ${T.max.toFixed(1)} s) · mirror checks ${T.mirror} · eyes closed over 1 s: ${T.closed} · phone in hand ${Math.round(T.phone)} s · knees near straight ${(STRETCH.tot.knee/60).toFixed(0)} min · arms straight ${(STRETCH.tot.elbow/60).toFixed(0)} min · neck turned ${(STRETCH.tot.neck/60).toFixed(0)} min`;
+    $('driveSum').style.color=T.long||T.closed?'var(--hot)':'var(--accent)';}
+}
+const STRETCH={m:{knee:0,elbow:0,neck:0},tot:{knee:0,elbow:0,neck:0},run:{knee:0,elbow:0,neck:0}};
+function stretchTick(dt){
+  const f=lastFused||{},hit={},add=(k)=>{STRETCH.m[k]+=dt;STRETCH.tot[k]+=dt;hit[k]=1;};
+  if([f['L knee'],f['R knee']].some(v=>v!=null&&v>150))add('knee');
+  if([f['L elbow'],f['R elbow']].some(v=>v!=null&&v>160))add('elbow');
+  if(performance.now()-FACE.t<1000&&Math.abs((FACE.yaw||0)-(DRIVE.on?DRIVE.roadYaw:0))>45)add('neck');
+  for(const k in STRETCH.run)STRETCH.run[k]=hit[k]?STRETCH.run[k]+dt:0;
+}
+setInterval(()=>{const want=$('activity').value==='driving';
+  if(want&&!DRIVE.phase){DRIVE.phase='setup';$('driveBar').style.display='flex';$('legsHidden').value='seated';}
+  if(!want&&DRIVE.phase){DRIVE.phase='';$('driveBar').style.display='none';}
+  if(DRIVE.phase==='setup'){const seen=CAMS.filter(c=>!c.off&&c.res?.landmarks?.length).map(c=>c.key),fv=performance.now()-FACE.t<1000;
+    $('driveCheck').textContent=`skeleton seen by camera ${seen.join(' + ')||'none'} · face ${fv?'✓ ('+FACE.camKey+')':'not visible'}${DRIVE.roadPitch!=null?' · road ahead set ✓':''}`;}
+  const on=DRIVE.phase==='drive';setDrive(on);
+  if(on){const el=$('driveClock');el.textContent=`dtom is logging quietly · ${Math.floor((Date.now()-DRIVE.t0)/60000)} min`+(performance.now()-FACE.t<1500?'':' · face not visible');
+    if(live('phone')&&seenObj.phone.hand){DRIVE.tot.phone+=1;if(DRIVE.m)DRIVE.m.phone_in_hand_s+=1;}}},1000);
+$('drivePark').onclick=()=>{$('activity').value='auto';DRIVE.phase='';setDrive(false);saveState();};
+$('seatUpright').onclick=()=>{SEATCAP.until=performance.now()+3000;SEATCAP.acc={};SEATCAP.ctx='seat';$('seatUpright').textContent='Hold still, sitting tall…';setTimeout(seatFinish,3200);};
+$('driveUpright').onclick=()=>{SEATCAP.until=performance.now()+3000;SEATCAP.acc={};SEATCAP.ctx='car';$('driveUpright').textContent='Hold still, sitting tall…';setTimeout(seatFinish,3200);};
+$('driveGo').onclick=()=>{DRIVE.phase='drive';};
+$('driveCancel').onclick=()=>{$('activity').value='auto';DRIVE.phase='';$('driveBar').style.display='none';};
+$('driveRoad').onclick=()=>{if(performance.now()-FACE.t>1000){$('driveRoad').textContent='face not visible: check the face camera';return;}
+  DRIVE.roadPitch=FACE.gp;DRIVE.roadYaw=FACE.gy;$('driveRoad').textContent='Road ahead set ✓';};
+$('activity').addEventListener('change',()=>{if($('activity').value==='driving')beep(520,.05,1);});
+// ---- dtom speaks: when a region has carried load for a while, dtom says where it hurts (first person) and the fix ----
+const SAY={
+  neck:{drive:'My neck is working hard holding my head forward. Easing my head back toward the headrest.',desk:'My neck is aching from leaning toward the screen. Bringing my ears back over my shoulders.'},
+  back:{drive:'My lower back is getting sore. Sitting all the way back into the seat. At the next stop, add some lumbar support.',desk:'My lower back is tired. Sliding my hips back so the chair takes the load.'},
+  shL:{drive:'My left shoulder is tight. Dropping it, and bringing my hand down to nine o\u2019clock.',desk:'My left shoulder is tight from reaching. Bringing my arm in and resting the forearm.'},
+  shR:{drive:'My right shoulder is tight. Dropping it, and bringing my hand down to three o\u2019clock.',desk:'My right shoulder is tight from reaching. Bringing my arm in and resting the forearm.'},
+  knee:{drive:'My hamstrings are pulling from reaching the pedals. At the next stop, move the seat one notch forward.',desk:'My legs have been stretched out a long time. Bending my knees, feet flat.'},
+  hipflex:{drive:'My hip flexors have been folded a long time. At the next stop, get out and walk for a minute.',desk:'My hip flexors have been folded for forty minutes. Standing up for a minute, maybe a lunge stretch.'},
+  calf:{drive:'My calves have not moved in a while. Flexing my ankles at the next red light.',desk:'My calves have not moved in half an hour. Ankle circles, or a quick walk.'},
+  lumbar:{drive:'My lower back is rounding. Sitting back into the seat, tall.',desk:'My lower back is rounding. Sliding my hips back to the backrest and sitting up tall.'},
+  kneelock:{drive:'My knees are locked.',desk:'My knees are locked. Softening them a little and shifting my weight.'},
+  hang:{drive:'I am leaning on one hip.',desk:'I am hanging on one hip. Weight even on both feet.'},
+  elbow:{drive:'My arms have been straight too long. At the next stop, bring the seat or the wheel closer.',desk:'My arms are reaching. Pulling the keyboard closer.'}};
+const VOICE={last:0,lastR:{},fixes:{},pending:null};
+function speak(t){try{if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=1;u.volume=.9;speechSynthesis.speak(u);}catch(e){}}
+function voiceTick(){
+  if(!$('speakOn')?.checked||!running)return;const drive=DRIVE.phase==='drive';if(DRIVE.phase==='setup')return;
+  const now=Date.now(),P=VOICE.pending;
+  if(P){const v=P.cur();if(v!=null&&v<P.base*.6){VOICE.fixes[P.r]=(VOICE.fixes[P.r]||0)+1;minuteEvent('coach_fixed',REG.includes(P.r)?P.r:null);
+      if(drive)beep(990,.06,2);else speak('Better. Thanks.');VOICE.pending=null;}
+    else if(now-P.t>120000)VOICE.pending=null;return;}
+  if(now-VOICE.last<(drive?600000:240000))return;
+  const fresh=strain.last&&performance.now()-strain.last<2000,c=[];
+  if(fresh)for(const r of REG){if((r==='neck'||r==='back')&&strain.noSide)continue;const f=strain.fat[r]||0;if(f>.4)c.push({r,score:f,cur:()=>strain.pct[r]});}
+  for(const r of ['knee','elbow'])if(STRETCH.run[r]>600)c.push({r,score:.4+STRETCH.run[r]/3600,cur:()=>STRETCH.run[r]>0?1:0,base:1});
+  for(const r of ['hipflex','calf','kneelock','hang','lumbar']){const v=LOWER.pct[r==='kneelock'?'knee':r];if(v!=null&&v>=100)c.push({r,score:.5+v/400,cur:()=>LOWER.pct[r==='kneelock'?'knee':r],base:v});}
+  const gap=r=>(drive?1200000:600000)*(1+(VOICE.fixes[r]||0)/2);   // a cue you keep fixing speaks less often (fading feedback)
+  const pick=c.filter(x=>now-(VOICE.lastR[x.r]||0)>gap(x.r)).sort((a,b)=>b.score-a.score)[0];if(!pick)return;
+  speak(SAY[pick.r][drive?'drive':'desk']);VOICE.last=now;VOICE.lastR[pick.r]=now;minuteEvent('coach_flag',REG.includes(pick.r)?pick.r:null);
+  VOICE.pending={r:pick.r,t:now,cur:pick.cur,base:pick.base??Math.max(.01,pick.cur()||0)};
+}
+setInterval(()=>{try{voiceTick();}catch(e){}},1000);
+$('forgetAll').onclick=()=>{if(!confirm('Delete everything dtom keeps in this browser (scan, settings, calibration, unsent minutes, token)? Minutes already sent to Nymbus are not affected.'))return;
+  try{for(const k of Object.keys(localStorage))if(k.startsWith('nymbus.'))localStorage.removeItem(k);}catch(e){}window.__noSave=true;location.replace(location.pathname);};
+$('speakTest').onclick=()=>speak(SAY.back[DRIVE.phase?'drive':'desk']);
+function actv(){const v=$('activity').value;if(v!=='auto')return v;return lastPosture==='standing'&&Date.now()-lastPostureT<60000?'standdesk':'sitting';}
+const REG=['neck','back','shL','shR'],COACH_REGION={head:'neck',lean:'back',shoulders:null,hips:null},NYMBUS_URL='http://127.0.0.1:8000/api/twin/minute';
+let lastUsing=[];const MINUTE={start:null,last:0};
+function resetMinute(){const z=()=>({neck:0,back:0,shL:0,shR:0}),nul=()=>({neck:null,back:null,shL:null,shR:null});
+  Object.assign(MINUTE,{relief:[],drove:false,start:new Date(Date.now()),frames:0,sideFrames:0,sit:0,stand:0,sum:z(),n:z(),max:nul(),fat:nul(),samePos:null,yawn0:FACE.yawns,
+    faceN:0,brow:0,pitch:0,look:{screen:0,down:0,away:0},using:{laptop:0,phone:0},events:[],cams:new Set()});}
+function minuteEvent(type,region){if(!MINUTE.start)resetMinute();MINUTE.events.push({t:new Date(Date.now()).toISOString(),type,region:region??null});}
+function tickMinute(){
+  const now=performance.now(),dt=MINUTE.last?Math.min(.5,(now-MINUTE.last)/1000):0;MINUTE.last=now;
+  if(!MINUTE.start)resetMinute();
+  if(running){
+    MINUTE.frames++;CAMS.filter(c=>!c.off).forEach(c=>MINUTE.cams.add(c.key));if(sideFresh())MINUTE.sideFrames++;
+    const post=$('posture').textContent;if(post==='sitting')MINUTE.sit+=dt;else if(post==='standing')MINUTE.stand+=dt;
+    if(scan.done&&shadow.ready&&strain.last&&now-strain.last<1000){
+      for(const k of REG){if((k==='neck'||k==='back')&&strain.noSide)continue;   // no side view: stays null, never 0
+        const v=strain.pct[k];MINUTE.sum[k]+=v;MINUTE.n[k]++;MINUTE.max[k]=Math.max(MINUTE.max[k]??0,v);MINUTE.fat[k]=Math.max(MINUTE.fat[k]??0,100*Math.min(1,strain.fat[k]));}
+      MINUTE.samePos=Math.max(MINUTE.samePos??0,(Date.now()-strain.posStart)/60000);}
+    if(now-FACE.t<1000){MINUTE.faceN++;MINUTE.brow+=FACE.brow;MINUTE.pitch+=FACE.pitch-FACE.level;MINUTE.look[FACE.look==='screen'?'screen':FACE.look==='down'?'down':'away']+=dt;}
+    if(actv()!=='driving')for(const u of lastUsing)if(u in MINUTE.using)MINUTE.using[u]+=dt;
+    stretchTick(dt);if(actv()==='driving')MINUTE.drove=true;}
+  if(Date.now()-MINUTE.start.getTime()>=60000)flushMinute();
+}
+let nyQueue=(()=>{try{return JSON.parse(localStorage.getItem('nymbus.queue')||'[]');}catch(e){return [];}})(),nySent=0,nyBusy=false,nyLast='';
+const saveQueue=()=>{try{localStorage.setItem('nymbus.queue',JSON.stringify(nyQueue));}catch(e){}};
+function flushMinute(){
+  const M=MINUTE,r=v=>v==null?null:Math.round(v*10)/10,lookT=M.look.screen+M.look.down+M.look.away,fs=M.faceN>0;
+  const doc={schema:'nymbus.twin_minute.v1',t_start:M.start.toISOString(),t_end:new Date(Date.now()).toISOString(),source:'dtom',version:'v0',
+    cameras:[...M.cams],side_view_pct:M.frames?Math.round(100*M.sideFrames/M.frames):null,
+    posture:{sitting_s:Math.round(M.sit),standing_s:Math.round(M.stand)},
+    load_pct_avg:Object.fromEntries(REG.map(k=>[k,M.n[k]?r(M.sum[k]/M.n[k]):null])),
+    load_pct_max:Object.fromEntries(REG.map(k=>[k,r(M.max[k])])),fatigue_max:Object.fromEntries(REG.map(k=>[k,r(M.fat[k])])),
+    same_position_max_min:r(M.samePos),
+    face:{blinks_per_min:fs?FACE.blinks.length:null,yawns:fs?Math.max(0,FACE.yawns-M.yawn0):null,brow_tension:fs?Math.round(100*M.brow/M.faceN)/100:null,
+      looking_pct:Object.fromEntries(['screen','down','away'].map(k=>[k,lookT?Math.round(100*M.look[k]/lookT):null])),head_pitch_avg:fs?r(M.pitch/M.faceN):null},
+    using_s:{laptop:Math.round(M.using.laptop),phone:Math.round(M.using.phone)},events:M.events,
+    activity:M.drove?'driving':actv(),relief:M.relief||[],
+    lower_body:{seated_min:strain.sitStart?Math.round((Date.now()-strain.sitStart)/6000)/10:0,hip_flexor_pct:Math.round(LOWER.pct.hipflex),legs_still_pct:LOWER.pct.calf==null?null:Math.round(LOWER.pct.calf),
+      knees_locked_s:Math.round(LOWER.m.knee_locked_s),hip_hang_s:Math.round(LOWER.m.hip_hang_s),slumped_s:Math.round(LOWER.m.slumped_s||0),rounded_s:Math.round(LOWER.m.rounded_s||0)},stretch_s:{knee:Math.round(STRETCH.m.knee),elbow:Math.round(STRETCH.m.elbow),neck:Math.round(STRETCH.m.neck)}};
+  if(M.drove&&DRIVE.m){doc.drive={...DRIVE.m,max_glance_s:+DRIVE.m.max_glance_s.toFixed(1),offroad_s:Math.round(DRIVE.m.offroad_s)};DRIVE.m=driveZero();}
+  STRETCH.m={knee:0,elbow:0,neck:0};LOWER.m={knee_locked_s:0,hip_hang_s:0};
+  const hadFrames=M.frames>0;resetMinute();
+  if(!hadFrames||!$('sendNymbus').checked)return;
+  nyQueue.push(doc);while(nyQueue.length>240)nyQueue.shift();saveQueue();sendQueue();
+}
+async function sendQueue(){
+  if(nyBusy)return;const tok=(()=>{try{return localStorage.getItem('nymbus.token')||'';}catch(e){return '';}})();
+  if(!tok){nyLast='add the ingest token';return showSend();}
+  nyBusy=true;
+  try{while(nyQueue.length){let res;
+      try{res=await fetch(NYMBUS_URL,{method:'POST',headers:{'Content-Type':'application/json','X-Nymbus-Token':tok},body:JSON.stringify(nyQueue[0])});}
+      catch(e){nyLast='Nymbus not reachable — will retry next minute';break;}
+      if(res.status===201||res.status===200){nyQueue.shift();nySent++;nyLast=`stored ✓ ${new Date().toLocaleTimeString()}`;}
+      else if(res.status===409||res.status===400||res.status===413){const t=await res.text().catch(()=>'');nyQueue.shift();nyLast=`minute rejected (${res.status}) ${t.slice(0,120)}`;}
+      else if(res.status===401){nyLast='token rejected — paste the token from .env again';break;}
+      else if(res.status===503){nyLast='Nymbus has no token set — add DTOM_INGEST_TOKEN to .env and restart';break;}
+      else{nyLast=`Nymbus answered ${res.status} — will retry`;break;}}
+  }finally{nyBusy=false;saveQueue();showSend();}
+}
+function showSend(){const el=$('sendState');if(!el)return;el.textContent=`${nySent} sent · ${nyQueue.length} waiting · ${nyLast}`;
+  el.style.color=nyLast.startsWith('stored')?'var(--accent)':nyLast?'var(--hot)':'';}
+async function makeDetector(){
+  try{const fs=await vision.FilesetResolver.forVisionTasks(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}/wasm`);
+    return await vision.ObjectDetector.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',delegate:'GPU'},
+      runningMode:'VIDEO',scoreThreshold:.4,maxResults:8});}catch(e){console.warn('object detector unavailable',e);return null;}
+}
+const OBJ_KIND={'cell phone':'phone',laptop:'laptop',keyboard:'desk',mouse:'desk','dining table':'desk',tv:'desk',cup:'drink',bottle:'drink','wine glass':'drink',
+  bowl:'food',sandwich:'food',banana:'food',apple:'food',orange:'food',pizza:'food',donut:'food',cake:'food','hot dog':'food',broccoli:'food',carrot:'food',book:'tablet'};
+const seenObj={};const live=k=>seenObj[k]&&performance.now()-seenObj[k].t<4000;
+function detectObjects(c,now){
+  if(!c.od||!($('autoProps').checked||$('blurOthers')?.checked))return;let r;try{r=c.od.detectForVideo(c.video,now);}catch(e){return;}
+  const people=[];
+  const W=c.video.videoWidth,H=c.video.videoHeight,lm=c.res?.landmarks?.length?c.res.landmarks.reduce((a,b)=>bodySize(b)>bodySize(a)?b:a):null;
+  const mir=(c.key==='A'&&$('aMirror').checked)||(c.key==='B'&&$('bMirror').checked);
+  for(const d of r?.detections||[]){const name=d.categories?.[0]?.categoryName,kind=OBJ_KIND[name];
+    const b=d.boundingBox;let x0=b.originX/W,y0=b.originY/H,x1=x0+b.width/W,y1=y0+b.height/H;let hand=null;
+    if(c.flip)[x0,x1,y0,y1]=[1-x1,1-x0,1-y1,1-y0];
+    if(name==='person'){people.push([x0,y0,x1,y1]);continue;}
+    if(!kind||!$('autoProps').checked)continue;
+    if(lm)for(const [i,sd] of [[15,'L'],[16,'R'],[19,'L'],[20,'R']]){const q=lm[i];if((q.visibility??0)<.4)continue;
+      if(q.x>x0-.04&&q.x<x1+.04&&q.y>y0-.04&&q.y<y1+.04){hand=mir?(sd==='L'?'R':'L'):sd;break;}}
+    seenObj[kind]={t:performance.now(),hand,cam:c.key,label:name};}
+  // bystanders: any person box that is not you (your skeleton's centre is not inside it) gets covered in the preview
+  const me=lm?(()=>{const v=[0,11,12,23,24].map(i=>lm[i]).filter(q=>(q.visibility??0)>.4);if(!v.length)return null;
+    return {x:v.reduce((a,q)=>a+q.x,0)/v.length,y:v.reduce((a,q)=>a+q.y,0)/v.length};})():null;
+  c.others={t:performance.now(),boxes:people.filter(([a,b2,cc,d2])=>!(me&&me.x>a&&me.x<cc&&me.y>b2&&me.y<d2)||(!me&&people.length>1))};
+}
+async function start(){
+  userStopped=false;$('startBtn').disabled=true;
+  try{
+    if(!window.isSecureContext) throw new Error('Not a secure page. Open it via http://localhost (see "Camera won\'t start?").');
+    status('Asking for camera permission…');
+    const probe=await navigator.mediaDevices.getUserMedia({video:true}); probe.getTracks().forEach(t=>t.stop());
+    const n=await listCams(); if(n<2) status('Only one camera found — running single-camera mode.','warn');
+    $('modelState').textContent='model: loading…';
+    for(const c of CAMS){
+      if(c===CAMS[1] && (n<2 || CAMS[1].sel.value===CAMS[0].sel.value)){c.off=true;c.tag.textContent='Camera B (off)';continue;}
+      c.off=false;
+      c.stream=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:c.sel.value},width:{ideal:1920},height:{ideal:1080}},audio:false});
+      c.video=c.vid; c.video.srcObject=c.stream; await c.video.play();
+      c.lm=await makeLandmarker(); c.lastTs=-1; c.res=null; c.od=await makeDetector();
+      c.tag.textContent='Camera '+c.key+' · '+(c.sel.selectedOptions[0]?.textContent||'').slice(0,28);
+    }
+    faceLM=await makeFace();
+    $('modelState').textContent='model: ready';
+    running=true; $('scanBtn').disabled=false; $('stopBtn').disabled=false; $('calBtn').disabled=false; $('afterBtn').disabled=false; $('seatBtn').disabled=false;
+    status('Tracking. Stand so at least one camera sees you head to feet.','ok'); requestAnimationFrame(loop);
+  }catch(e){
+    $('startBtn').disabled=false;
+    const why=e.name==='NotAllowedError'?'Camera permission was denied by the browser or Windows. ':e.name==='NotReadableError'?'A camera is busy in another app. ':'';
+    status('Could not start: '+why+e.message,'bad'); document.querySelector('details').open=true;
+  }
+}
+let userStopped=false;
+function stop(){userStopped=true;running=false;for(const c of CAMS){c.stream?.getTracks().forEach(t=>t.stop());c.stream=null;}
+  $('startBtn').disabled=false;$('stopBtn').disabled=true;status('Stopped.');}
+
+const sub=(a,b)=>[a.x-b.x,a.y-b.y,a.z-b.z], dot=(u,v)=>u[0]*v[0]+u[1]*v[1]+u[2]*v[2], nrm=u=>Math.hypot(...u);
+function ang3(a,b,c){const u=sub(a,b),v=sub(c,b),d=nrm(u)*nrm(v);return d?Math.acos(Math.max(-1,Math.min(1,dot(u,v)/d)))*180/Math.PI:null;}
+function camAngles(world,img){
+  const out={},vis={};
+  for(const [n,[a,b,c]] of JOINTS){const v=Math.min(img[a].visibility??1,img[b].visibility??1,img[c].visibility??1);
+    vis[n]=v; out[n]=v>0.5?ang3(world[a],world[b],world[c]):null;}
+  const mid=(p,q)=>({x:(p.x+q.x)/2,y:(p.y+q.y)/2,z:(p.z+q.z)/2});
+  const sh=mid(world[I.lSh],world[I.rSh]),hp=mid(world[I.lHip],world[I.rHip]),ear=mid(world[I.lEar],world[I.rEar]);
+  const up=[0,-1,0];
+  out['Trunk lean']=Math.acos(Math.max(-1,Math.min(1,dot(sub(sh,hp),up)/nrm(sub(sh,hp)))))*180/Math.PI;
+  out['Neck forward']=Math.acos(Math.max(-1,Math.min(1,dot(sub(ear,sh),up)/nrm(sub(ear,sh)))))*180/Math.PI;
+  vis['Trunk lean']=Math.min(img[I.lSh].visibility??1,img[I.lHip].visibility??1);
+  vis['Neck forward']=Math.min(img[I.lEar].visibility??1,img[I.lSh].visibility??1);
+  return {out,vis};
+}
+function luma(c){
+  const cv=c._lc||(c._lc=Object.assign(document.createElement('canvas'),{width:48,height:36}));
+  const x=cv.getContext('2d',{willReadFrequently:true});x.drawImage(c.video,0,0,48,36);
+  const d=x.getImageData(0,0,48,36).data;let s=0;for(let i=0;i<d.length;i+=4)s+=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];
+  const l=s/(d.length/4)/255;c.luma=l;c.bodyLuma=null;
+  const lm=c.res?.landmarks?.length?c.res.landmarks.reduce((a,b)=>bodySize(b)>bodySize(a)?b:a):null;
+  if(lm){const v=lm.filter(q=>(q.visibility??0)>.5).map(q=>c.flip?{x:1-q.x,y:1-q.y}:q);if(v.length>5){
+    const x0=Math.max(0,Math.floor(Math.min(...v.map(q=>q.x))*48)),x1=Math.min(47,Math.ceil(Math.max(...v.map(q=>q.x))*48)),
+          y0=Math.max(0,Math.floor(Math.min(...v.map(q=>q.y))*36)),y1=Math.min(35,Math.ceil(Math.max(...v.map(q=>q.y))*36));
+    let bs=0,bn=0;for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++){const i=(yy*48+xx)*4;bs+=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];bn++;}
+    if(bn)c.bodyLuma=bs/bn/255;}}c.meter.style.width=(l*100|0)+'%';
+  c.meter.style.background=l<.25?'var(--bad)':l<.4||l>.85?'var(--hot)':'var(--accent)';
+  c.ltxt.textContent=(l<.25?'too dark — add front light':l<.4?'dim':l>.85?'too bright':'good')+(c.boost?` · night boost ×${c.boost}`:'');
+}
+let frame=0,primaryScore={A:0,B:0,C:0};
+const PHONE={key:'C',tag:{classList:{toggle(){}}}};let phone=null;
+async function phoneInfo(){try{const r=await fetch('/api/info',{cache:'no-store'});if(!r.ok)return;const j=await r.json();
+  const fresh=phone&&performance.now()-phone.t<1500;
+  $('phoneBox').innerHTML=`Phone camera (C): on the phone open <b>${j.phone_url}</b> · code <b>${j.code}</b> · ${fresh?'<span class="ok">streaming</span>':j.paired?'paired, waiting for joints':'not paired'}`;}catch(e){}}
+setInterval(phoneInfo,2000);phoneInfo();
+try{const es=new EventSource('/api/stream');es.onmessage=e=>{const d=JSON.parse(e.data);if(d.world&&d.img)phone={t:performance.now(),
+  world:d.world.map(([x,y,z])=>({x,y,z})),img:d.img.map(([x,y,z,v])=>({x,y,z,visibility:v}))};};}catch(e){}
+function loop(){
+  if(!running)return;
+  try{loopBody();}catch(e){console.error(e);status('Twin error (still running): '+e.message,'warn');}
+  try{tickMinute();}catch(e){console.error(e);}
+  frame++; requestAnimationFrame(loop);
+}
+function loopBody(){
+  const now=performance.now();
+  const views=[];
+  for(const c of CAMS){
+    if(!c.off)srcStage(c);
+    if(c.off||!c.video.videoWidth)continue;
+    if(now!==c.lastTs){c.lastTs=now;const cr=cropFor(c);const r=c.lm.detectForVideo(c.cv,now);
+      if(r?.landmarks)r.landmarks=r.landmarks.map(lm=>lm.map(q=>({...q,x:(cr.sx+q.x*cr.cw)/cr.W,y:(cr.sy+q.y*cr.ch)/cr.H})));
+      c.res=r;followUpdate(c,r);trackJitter(c,r);
+      if(frame%10===(c.key==='A'?0:5))detectObjects(c,now);
+      if(c.key===faceCamKey()&&frame%2===1)trackFace(c,now);}
+    showZoom(c);
+    const r=c.res; if(r?.worldLandmarks?.[0]){
+      // largest detected body = you; a second, smaller one = mirror reflection (if enabled)
+      const order=r.landmarks.map((lm,i)=>({i,size:bodySize(lm)})).sort((a,b)=>b.size-a.size);
+      const k=order[0].i;let img=r.landmarks[k],world=r.worldLandmarks[k];
+      if((c.key==='A'&&$('aMirror').checked)||(c.key==='B'&&$('bMirror').checked)){   // seen in a mirror: swap left/right and un-flip
+        img=img.map((p,j)=>({...r.landmarks[k][MIRROR_IDX[j]],x:1-r.landmarks[k][MIRROR_IDX[j]].x}));
+        world=world.map((p,j)=>{const q=r.worldLandmarks[k][MIRROR_IDX[j]];return {x:-q.x,y:q.y,z:q.z};});
+      }
+      if($(c.key==='A'?'aBack':'bBack').checked)world=world.map(q=>({x:-q.x,y:q.y,z:-q.z}));
+      if($('mirrorAssist').checked&&order[1]){
+        const m=order[1].i;world=fillFromMirror(world,img,r.worldLandmarks[m],r.landmarks[m]);
+        img=img.map((p,j)=>({...p,visibility:Math.max(p.visibility??1,(r.landmarks[m][MIRROR_IDX[j]].visibility??0)*.8)}));
+      }
+      const vis=img.reduce((a,p)=>a+(p.visibility??1),0)/img.length;
+      if(c.boost>=3&&vis<.65)continue;   // a near-black picture invents skeletons: ignore weak ones
+      views.push({c,img,world,vis,...camAngles(world,img)});
+      if(c.key===(primary||'A'))framingHint(c,img);
+    }
+    if(frame%15===0)luma(c);
+  }
+  if(phone&&now-phone.t<600){const vis=phone.img.reduce((a,p)=>a+(p.visibility??1),0)/phone.img.length;
+    views.push({c:PHONE,img:phone.img,world:phone.world,vis,...camAngles(phone.world,phone.img)});}
+  alignViews(views);
+  // primary camera = best overall visibility, with hysteresis
+  for(const c of [...CAMS,PHONE]){const v=views.find(x=>x.c===c);primaryScore[c.key]=primaryScore[c.key]*.9+(v?v.vis:0)*.1;}
+  const best=Object.keys(primaryScore).reduce((a,b)=>primaryScore[b]>primaryScore[a]?b:a,'A');
+  if(!primary||primaryScore[best]>primaryScore[primary]+0.05)primary=best;
+  CAMS.forEach(c=>c.tag.classList.toggle('primary',c.key===primary));
+  $('primary').textContent=views.length?(primary==='C'?'C (phone)':primary):'–';
+
+  // fuse angles per joint by visibility
+  const fused={},src={};
+  for(const tr of tbody.children){const n=tr.dataset.j;let wsum=0,acc=0,bestv=0,bestc='–';
+    for(const v of views){const a=v.out[n],w=v.vis[n];if(a==null||w<.5)continue;acc+=a*w;wsum+=w;if(w>bestv){bestv=w;bestc=v.c.key;}}
+    fused[n]=wsum?acc/wsum:null;src[n]=bestc;}
+  // motion: angular speed, decaying highlight
+  // motion highlight on SMOOTHED angles so far-away, jittery joints don't all light up
+  const dt=1/30;
+  for(const n in fused){const a=fused[n];if(a==null){motion[n]=(motion[n]||0)*0.92;continue;}
+    const sm=smooth[n]==null?a:smooth[n]+(a-smooth[n])*0.25;const p=prevAngles[n];
+    const sp=p!=null?Math.abs(sm-p)/dt:0;motion[n]=Math.max(sp>45?Math.min(1,(sp-45)/60):0,(motion[n]||0)*0.9);
+    prevAngles[n]=sm;smooth[n]=sm;fused[n]=sm;}
+  if(calBuf&&views.length)calBuf.push(fused);
+
+  lastViews=views;renderTable(fused,src); renderPosture(fused);lastFused=fused;
+  if(views.length)updateShadow(fuseViews(views));   // every joint from whichever camera sees it best
+  if(scan.waiting)walkinCheck(views);
+  if(scan.active)scanAccumulate(views,fused);
+  else if(!scan.waiting&&$('autoScan').checked&&frame%3===0)passiveScan(views,fused);
+  const tv=$('twinView').value;
+  if(scan.waiting)drawBody(scan.done&&shadow.ready?puppetPose():null);
+  else if(scan.active||(tv==='model'&&scan.done))drawBody();
+  else if(tv==='guide')drawGuide();
+  else if(tv==='coach'&&scan.done&&shadow.ready)coachStep();
+  else if(tv==='puppet'&&scan.done&&shadow.ready)drawBody(puppetPose(),$('strainView').checked?{rgbOf:strainRGB}:{});
+  else drawTwin(shadow.ready?shadow:null);
+  if(frame%15===0&&views.length){samples.push({t:new Date().toISOString(),primary,posture:$('posture').textContent,angles:round(fused),   /* angles: raw per-camera, before tilt correction */
+    corrected:strain.last&&performance.now()-strain.last<1000?{trunk_lean_deg:Math.round(strain.metric.back),head_forward_cm:Math.round(strain.metric.neck*10)/10,side_view:!strain.noSide,load_pct:round(strain.pct)}:null});$('count').textContent=samples.length+' samples';}
+  if($('turntable').checked&&!drag)yaw+=0.004;
+}
+const f0=v=>v==null?'–':v.toFixed(0)+'°';
+function round(o){const r={};for(const k in o)r[k]=o[k]==null?null:Math.round(o[k]*10)/10;return r;}
+function renderTable(fused,src){
+  let s=0,k=0;
+  for(const tr of tbody.children){const n=tr.dataset.j,b=standing?.angles?.[n],a=after?.angles?.[n];
+    tr.className=(motion[n]||0)>.3?'hot':'';
+    tr.children[1].textContent=f0(fused[n]);tr.children[2].textContent=f0(b);
+    tr.children[3].textContent=(a!=null&&b!=null)?((a-b>=0?'+':'')+(a-b).toFixed(1)+'°'):'–';tr.children[4].textContent=src[n];}
+  for(const [l,r] of PAIRS)if(fused[l]!=null&&fused[r]!=null){s+=Math.abs(fused[l]-fused[r]);k++;}
+  $('sym').textContent=k?(s/k).toFixed(1)+'°':'–';
+}
+let pTime={sitting:0,standing:0},pLast=null,lastPosture=null,lastPostureT=0,legMem={};
+function renderPosture(f){
+  const hip=[f['L hip'],f['R hip']].filter(v=>v!=null),knee=[f['L knee'],f['R knee']].filter(v=>v!=null);
+  const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
+  // a knee only counts if a camera clearly sees it INSIDE its picture (the model guesses hidden legs as bent)
+  const inFrame=q=>(q.visibility??0)>.7&&q.y<.97&&q.y>.02&&q.x>.02&&q.x<.98;
+  const kneeSeen=(lastViews||[]).some(v=>inFrame(v.img[25])||inFrame(v.img[26]));
+  let p=!hip.length?'–':(kneeSeen&&knee.length&&avg(hip)<130&&avg(knee)<140)?'sitting':avg(hip)>155?'standing':kneeSeen?'moving':'–';
+  if(p==='–'&&actv()==='standdesk')p='standing';
+  $('posture').textContent=p;if(p==='sitting'||p==='standing'){lastPosture=p;lastPostureT=Date.now();}const t=performance.now()/1000;if(pLast&&pTime[p]!=null)pTime[p]+=t-pLast;pLast=t;
+}
+// ---- framing: keep the camera on you (centre + fill), leaving the right side for the text panel ----
+const FRAME={cx:0,cy:0,z:1,sx:.5};
+function frameNeutral(){Object.assign(FRAME,{cx:0,cy:0,z:1,sx:.5});}
+function frameFit(M,w,h,textOn){
+  const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch),xs=[],ys=[];
+  for(const i of [0,7,8,11,12,13,14,15,16,23,24,25,26,27,28,31,32]){const p=M[i];if(!p)continue;let x=p.x,y=p.y,z=p.z;[x,z]=[x*cy-z*sy,x*sy+z*cy];[y,z]=[y*cp-z*sp,y*sp+z*cp];xs.push(x);ys.push(y);}
+  if(xs.length<4)return;const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys),u=0.42*h*viewScale;
+  const availW=w*(textOn?.52:.9),zt=Math.max(.6,Math.min(2.2,availW/((x1-x0+.35)*u),.82*h/((y1-y0+.3)*u)));
+  const t={cx:(x0+x1)/2,cy:(y0+y1)/2+.02,z:zt,sx:textOn?.29:.5};for(const k in t)FRAME[k]+=(t[k]-FRAME[k])*.06;}
+function textPanel(lines,w,h){
+  if(!lines.length)return;g.textAlign='left';const colW=Math.min(w*.44,600),x0=w-colW-12,lh=21,out=[];
+  for(const [t,col,bold] of lines){g.font=(bold?'600 ':'')+'15px Segoe UI';let cur='';
+    for(const word of t.split(' ')){const tryL=cur?cur+' '+word:word;if(g.measureText(tryL).width>colW-20&&cur){out.push([cur,col,bold]);cur='   '+word;}else cur=tryL;}
+    out.push([cur,col,bold]);}
+  g.fillStyle='rgba(8,14,8,.74)';g.fillRect(x0,10,colW,out.length*lh+14);
+  out.forEach(([t,col,bold],k)=>{g.font=(bold?'600 ':'')+'15px Segoe UI';g.fillStyle=col;g.fillText(t,x0+10,30+k*lh);});}
+function project(p,w,h){
+  // world landmarks: meters, origin at hips, y down. rotate by yaw/pitch, simple perspective
+  let x=p.x,y=p.y,z=p.z;
+  const cy=Math.cos(yaw),sy=Math.sin(yaw);[x,z]=[x*cy-z*sy,x*sy+z*cy];
+  const cp=Math.cos(pitch),sp=Math.sin(pitch);[y,z]=[y*cp-z*sp,y*sp+z*cp];
+  const k=viewScale,pz=1/(1+z*0.45*k),s=h*0.42*k*FRAME.z*pz;return [FRAME.sx*w+(x-FRAME.cx)*s,h*0.52+(y-FRAME.cy)*s,z,pz];
+}
+// ---- persistent "shadow" model: fills in from whatever the cameras see, keeps last good positions ----
+const MIRROR_IDX=(()=>{const m=[...Array(33).keys()];const sw=[[1,4],[2,5],[3,6],[7,8],[9,10],[11,12],[13,14],[15,16],[17,18],[19,20],[21,22],[23,24],[25,26],[27,28],[29,30],[31,32]];
+  for(const [a,b] of sw){m[a]=b;m[b]=a;}return m;})();
+function bodySize(lm){const ys=lm.map(p=>p.y),xs=lm.map(p=>p.x);return (Math.max(...ys)-Math.min(...ys))*(Math.max(...xs)-Math.min(...xs));}
+function fillFromMirror(world,img,mWorld,mImg){
+  // reflection shows your hidden side: left/right swap and depth flips; use it only where your own view is weak
+  return world.map((p,j)=>{const own=img[j].visibility??1,src=mWorld[MIRROR_IDX[j]],sv=mImg[MIRROR_IDX[j]].visibility??0;
+    return (own<.5&&sv>.6)?{x:-src.x,y:src.y,z:-src.z}:p;});
+}
+const shadow={pts:Array.from({length:33},()=>null),conf:new Array(33).fill(0),seen:new Array(33).fill(0),ready:false,seat:null,state:'–'};
+function updateShadow(v){
+  const a=parseFloat($('memory').value);
+  const state=$('posture').textContent;
+  const stateChanged=(state!==shadow.state&&(state==='sitting'||state==='standing'))||shadow.cam!==v.c.key;
+  if(stateChanged){shadow.state=state;shadow.cam=v.c.key;}   // re-settle on sit/stand change or when the other camera takes over
+  for(let i=0;i<33;i++){
+    const vis=v.img[i].visibility??1,p=v.world[i];
+    if(vis>.6){
+      const k=stateChanged?.5:a*(0.5+vis);           // re-settle quickly on sit/stand change, otherwise accumulate slowly
+      shadow.pts[i]=shadow.pts[i]?{x:shadow.pts[i].x+(p.x-shadow.pts[i].x)*k,y:shadow.pts[i].y+(p.y-shadow.pts[i].y)*k,z:shadow.pts[i].z+(p.z-shadow.pts[i].z)*k}:{...p};
+      shadow.conf[i]=Math.min(1,shadow.conf[i]+.08);shadow.seen[i]=performance.now();
+    }else shadow.conf[i]=Math.max(.15,shadow.conf[i]*.995); // remembered joints fade but never vanish
+  }
+  shadow.ready=shadow.pts.filter(Boolean).length>20;
+}
+function framingHint(c,img){
+  const ys=img.filter(p=>(p.visibility??1)>.5).map(p=>p.y);if(!ys.length)return;
+  const span=Math.max(...ys)-Math.min(...ys),feet=Math.max(img[I.lAn].visibility??0,img[I.rAn].visibility??0)>.5,head=(img[I.nose].visibility??0)>.5;
+  const st=$('posture').textContent;let msg;
+  if(!head)msg='raise the camera or tilt it up — head not visible';
+  else if(st!=='sitting'&&!feet)msg='step back or lower the camera — feet not visible';
+  else if(span<.35)msg='move closer — you fill only '+Math.round(span*100)+'% of the frame';
+  else if(span>.92)msg='step back — too close to camera';
+  else msg='good — '+Math.round(span*100)+'% of frame'+(st==='sitting'?' (seated: chair side-on to camera B works best)':'');
+  $('framing').textContent='Framing (camera '+c.key+'): '+msg;
+}
+$('resetShadow').onclick=()=>{shadow.pts.fill(null);shadow.conf.fill(0);shadow.ready=false;};
+$('seatBtn').onclick=()=>{if(!shadow.ready)return;const hl=shadow.pts[I.lHip],hr=shadow.pts[I.rHip];
+  shadow.seat={x:(hl.x+hr.x)/2,y:(hl.y+hr.y)/2,z:(hl.z+hr.z)/2,at:new Date().toISOString()};$('seatBtn').textContent='Seat marked ✓';};
+// ---- guided body scan: paint a stable body model from measured bone lengths + coverage ----
+const SCANS={
+ standing:[{say:'Stand still, arms slightly out',secs:6},{say:'Reach both arms to the sky',secs:6},{say:'Slowly reach toward your toes',secs:8},
+   {say:'Twist your torso left, then right',secs:8},{say:'Turn sideways, then face the camera again',secs:8}],
+ seated:[{say:'Sit tall, feet flat, arms slightly out',secs:6},{say:'Reach both arms to the sky',secs:6},{say:'Straighten your LEFT leg out in front',secs:6},
+   {say:'Straighten your RIGHT leg out in front',secs:6},{say:'Lean forward, hands toward your toes',secs:6},{say:'Twist left, then right',secs:8}]};
+let SCAN_STEPS=[
+  {say:'Stand still, arms slightly out',secs:6},
+  {say:'Reach both arms to the sky',secs:6},
+  {say:'Slowly reach toward your toes',secs:8},
+  {say:'Twist your torso left, then right',secs:8},
+  {say:'Turn sideways, then face the camera again',secs:8}];
+const BONE_DEF={pelvis:[23,24],shoulders:[11,12],torsoL:[11,23],torsoR:[12,24],head:[0,'sh'],
+  uarmL:[11,13],uarmR:[12,14],farmL:[13,15],farmR:[14,16],thighL:[23,25],thighR:[24,26],shinL:[25,27],shinR:[26,28],footL:[27,31],footR:[28,32]};
+const scan={active:false,done:false,step:0,t0:0,len:{},cov:new Array(33).fill(0),seen:Array.from({length:33},()=>new Set()),rom:{}};
+const d3=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+function startScan(){
+  const mode=$('scanMode').value;SCAN_STEPS=SCANS[mode==='seated'?'seated':'standing'];
+  // a re-scan ADDS to what was measured before (sitting adds to standing), "Forget saved scan" starts over
+  Object.assign(scan,{active:mode!=='walkin',waiting:mode==='walkin',ready0:0,step:0,t0:performance.now()});
+  $('scanBtn').disabled=true;$('twinView').value='puppet';
+}
+const WALK_PARTS={head:[0],shoulders:[11,12],hips:[23,24],knees:[25,26],feet:[27,28]};
+function walkinCheck(views){
+  // the two cameras count together: e.g. head from the laptop camera, legs and feet from the side camera
+  const seen=i=>views.some(v=>(v.img[i].visibility??0)>.5);
+  scan.missing=Object.entries(WALK_PARTS).filter(([n,ids])=>!ids.some(seen)).map(([n])=>n);
+  if(!scan.wait0)scan.wait0=performance.now();
+  const full=!scan.missing.length;
+  if(!full){scan.ready0=0;return;}
+  if(!scan.ready0)scan.ready0=performance.now();
+  if(performance.now()-scan.ready0>1500){scan.waiting=false;scan.wait0=0;scan.active=true;scan.step=0;scan.t0=performance.now();}
+}
+function scanAccumulate(views,fused){
+  const el=(performance.now()-scan.t0)/1000;
+  if(el>SCAN_STEPS[scan.step].secs){scan.step++;scan.t0=performance.now();
+    if(scan.step>=SCAN_STEPS.length){scan.active=false;scan.done=true;$('scanBtn').disabled=false;$('scanBtn').textContent='Re-scan body';}}
+  for(const v of views){
+    const W=v.world,V=i=>v.img[i].visibility??1;
+    const sh={x:(W[11].x+W[12].x)/2,y:(W[11].y+W[12].y)/2,z:(W[11].z+W[12].z)/2};
+    for(const [b,[i,j]] of Object.entries(BONE_DEF)){
+      const pj=j==='sh'?sh:W[j],vj=j==='sh'?Math.min(V(11),V(12)):V(j);
+      if(V(i)>.7&&vj>.7){(scan.len[b]||(scan.len[b]=[])).push(d3(W[i],pj));if(scan.len[b].length>3000)scan.len[b].shift();}
+    }
+    for(let i=0;i<33;i++){const vi=V(i);if(vi>.7){scan.cov[i]=Math.min(1,scan.cov[i]+0.006*vi);scan.seen[i].add(SCAN_STEPS[0].say.slice(0,4)+scan.step);}}
+  }
+  for(const n in fused){const a=fused[n];if(a==null)continue;const r=scan.rom[n]||(scan.rom[n]={min:a,max:a});r.min=Math.min(r.min,a);r.max=Math.max(r.max,a);}
+  const pct=Math.round(100*coverage().overall);
+  $('scanInfo').textContent=scan.active?`Scan step ${scan.step+1}/${SCAN_STEPS.length} · coverage ${pct}%`:`Scan done · coverage ${pct}% · ${gapText()}`;
+}
+const median=a=>{if(!a||a.length<5)return null;const b=[...a].sort((x,y)=>x-y);return b[b.length>>1];};
+const DEF_LEN={pelvis:.26,shoulders:.36,torsoL:.5,torsoR:.5,head:.25,uarmL:.29,uarmR:.29,farmL:.26,farmR:.26,thighL:.43,thighR:.43,shinL:.42,shinR:.42,footL:.18,footR:.18};
+const medCache={};
+function boneLen(b){const c=medCache[b],n=scan.len[b]?.length||0;
+  if(!c||c.n!==n&&performance.now()-c.t>1000)medCache[b]={m:median(scan.len[b]),n,t:performance.now()};
+  return medCache[b].m??DEF_LEN[b];}
+function sideOn(img){const sh=Math.abs(img[11].x-img[12].x),hp=Math.abs(img[23].x-img[24].x),
+  tl=Math.hypot((img[11].x+img[12].x)/2-(img[23].x+img[24].x)/2,(img[11].y+img[12].y)/2-(img[23].y+img[24].y)/2)||1;return Math.max(sh,hp)<.45*tl;}
+// background scan: learns from every clear view (any posture, any camera), no button needed
+const CORE=['pelvis','shoulders','torsoL','torsoR','uarmL','uarmR','farmL','farmR','thighL','thighR','shinL','shinR'];
+function passiveScan(views,fused){
+  for(const v of views){
+    const W=v.world,V=i=>v.img[i].visibility??1;
+    const hd=sub(W[23],W[24]),face=Math.round(Math.atan2(hd[2],hd[0])/(Math.PI/4));   // which way you face, in 45° buckets
+    const tag='auto-'+(lastPosture||'?')+'-'+face;
+    const sh={x:(W[11].x+W[12].x)/2,y:(W[11].y+W[12].y)/2,z:(W[11].z+W[12].z)/2};
+    for(const [b,[i,j]] of Object.entries(BONE_DEF)){
+      const pj=j==='sh'?sh:W[j],vj=j==='sh'?Math.min(V(11),V(12)):V(j);
+      if((b==='pelvis'||b==='shoulders')&&sideOn(v.img))continue;
+      if(V(i)>.85&&vj>.85){const a=scan.len[b]||(scan.len[b]=[]);a.push(d3(W[i],pj));if(a.length>1500)a.shift();}
+    }
+    for(let i=0;i<33;i++){const vi=V(i);if(vi>.8){scan.cov[i]=Math.min(1,scan.cov[i]+0.002*vi);scan.seen[i].add(tag);}}
+  }
+  for(const n in fused){const a=fused[n];if(a==null)continue;const r=scan.rom[n]||(scan.rom[n]={min:a,max:a});r.min=Math.min(r.min,a);r.max=Math.max(r.max,a);}
+  const ready=CORE.filter(b=>(scan.len[b]?.length||0)>=30).length;
+  if(!scan.done&&ready===CORE.length){scan.done=true;$('scanBtn').textContent='Guided re-scan (optional)';$('twinView').value='puppet';}
+  if(frame%30===0)$('scanInfo').textContent=scan.done?`Auto scan · coverage ${Math.round(100*coverage().overall)}% · ${gapText()}`
+    :`Auto scan learning · ${ready}/${CORE.length} body segments measured — move around, stand up once, sit back down`;
+}
+const REGIONS={head:[0,7,8],shoulders:[11,12],'left arm':[13,15],'right arm':[14,16],hips:[23,24],'left leg':[25,27,31],'right leg':[26,28,32]};
+function jointCov(i){return 0.5*scan.cov[i]+0.5*Math.min(1,scan.seen[i].size/5);}
+function coverage(){const r={};let tot=0,k=0;for(const [n,ids] of Object.entries(REGIONS)){r[n]=ids.reduce((a,i)=>a+jointCov(i),0)/ids.length;tot+=r[n];k++;}r.overall=tot/k;return r;}
+function gapText(){const c=coverage();const gaps=Object.entries(c).filter(([n,v])=>n!=='overall'&&v<.5).map(([n])=>n);return gaps.length?'still thin: '+gaps.join(', '):'all regions covered';}
+function bodyModel(){
+  // canonical A-pose built from YOUR measured bone lengths (metres; y down; hips at origin)
+  const L=b=>boneLen(b),P=new Array(33).fill(null);
+  const pw=L('pelvis'),sw=L('shoulders'),tor=(L('torsoL')+L('torsoR'))/2,sa=Math.sin(.3),ca=Math.cos(.3);
+  P[23]={x:pw/2,y:0,z:0};P[24]={x:-pw/2,y:0,z:0};
+  const shy=-Math.sqrt(Math.max(.01,tor*tor-((sw-pw)/2)**2));
+  P[11]={x:sw/2,y:shy,z:0};P[12]={x:-sw/2,y:shy,z:0};
+  P[0]={x:0,y:shy-L('head'),z:-.04};P[7]={x:.07,y:P[0].y+.02,z:.02};P[8]={x:-.07,y:P[0].y+.02,z:.02};
+  P[13]={x:P[11].x+sa*L('uarmL'),y:P[11].y+ca*L('uarmL'),z:0};P[14]={x:P[12].x-sa*L('uarmR'),y:P[12].y+ca*L('uarmR'),z:0};
+  P[15]={x:P[13].x+sa*L('farmL'),y:P[13].y+ca*L('farmL'),z:-.03};P[16]={x:P[14].x-sa*L('farmR'),y:P[14].y+ca*L('farmR'),z:-.03};
+  P[25]={x:P[23].x+.02,y:L('thighL'),z:0};P[26]={x:P[24].x-.02,y:L('thighR'),z:0};
+  P[27]={x:P[25].x,y:P[25].y+L('shinL'),z:0};P[28]={x:P[26].x,y:P[26].y+L('shinR'),z:0};
+  P[29]={x:P[27].x,y:P[27].y+.04,z:.04};P[30]={x:P[28].x,y:P[28].y+.04,z:.04};
+  P[31]={x:P[27].x,y:P[27].y+.05,z:-L('footL')};P[32]={x:P[28].x,y:P[28].y+.05,z:-L('footR')};
+  const off=0.95-P[27].y;                            // ankles just above the floor grid (y=1.0)
+  return P.map(p=>p?{x:p.x,y:p.y+off,z:p.z}:null);
+}
+function puppetPose(){
+  const S=shadow.pts,L=b=>boneLen(b),P=new Array(33).fill(null);
+  const sub3=(a,b)=>({x:a.x-b.x,y:a.y-b.y,z:a.z-b.z}),add3=(a,b)=>({x:a.x+b.x,y:a.y+b.y,z:a.z+b.z});
+  const mul=(a,k)=>({x:a.x*k,y:a.y*k,z:a.z*k}),unit=a=>{const n=Math.hypot(a.x,a.y,a.z)||1;return mul(a,1/n);};
+  const mid=(a,b)=>mul(add3(a,b),.5),ok=(...i)=>i.every(k=>S[k]);
+  if(!ok(11,12,23,24))return bodyModel();
+  const hipMid=mid(S[23],S[24]),shMid=mid(S[11],S[12]);
+  const root={x:0,y:0,z:0};
+  const hipDir=unit(sub3(S[23],S[24])),shDir=unit(sub3(S[11],S[12]));
+  P[23]=add3(root,mul(hipDir,L('pelvis')/2));P[24]=add3(root,mul(hipDir,-L('pelvis')/2));
+  const torso=add3(root,mul(unit(sub3(shMid,hipMid)),(L('torsoL')+L('torsoR'))/2));
+  P[11]=add3(torso,mul(shDir,L('shoulders')/2));P[12]=add3(torso,mul(shDir,-L('shoulders')/2));
+  const chain=(from,to,bone)=>{if(P[from]&&S[to]&&S[from])P[to]=add3(P[from],mul(unit(sub3(S[to],S[from])),L(bone)));};
+  P[0]=S[0]?add3(torso,mul(unit(sub3(S[0],shMid)),L('head'))):add3(torso,{x:0,y:-L('head'),z:0});
+  chain(11,13,'uarmL');chain(13,15,'farmL');chain(12,14,'uarmR');chain(14,16,'farmR');
+  chain(23,25,'thighL');chain(25,27,'shinL');chain(27,31,'footL');chain(24,26,'thighR');chain(26,28,'shinR');chain(28,32,'footR');
+  if(S[7]&&S[8]){const em=mid(S[7],S[8]),d=sub3(em,shMid),len=Math.min(.3,Math.max(.12,Math.hypot(d.x,d.y,d.z))),E=add3(torso,mul(unit(d),len)),hw=mul(sub3(S[7],S[8]),.5);
+    P[7]=add3(E,hw);P[8]=sub3(E,hw);}
+  for(const [k,f] of [[29,27],[30,28],[7,0],[8,0]])if(!P[k]&&P[f])P[k]=add3(P[f],{x:0,y:.03,z:.03});
+  // legs out of view (desk, chair): pose them seated or standing instead of freezing the last guess
+  const mode=$('legsHidden').value,recent=Date.now()-lastPostureT<15000,seatedGuess=actv()!=='standdesk'&&(mode==='seated'||(mode==='auto'&&recent&&lastPosture==='sitting'));   // stale guesses expire
+  // facing: from the shoulder line (the front camera sees both shoulders well), turned so you face the laptop camera
+  let fwd=unit({x:shDir.z,y:0,z:-shDir.x});if(!CAMS[1].off&&fwd.z>0)fwd={x:-fwd.x,y:0,z:-fwd.z};
+  let seated=false;
+  const side=hipDir,toBody=v=>[dot([v.x,v.y,v.z],[side.x,side.y,side.z]),v.y,dot([v.x,v.y,v.z],[fwd.x,fwd.y,fwd.z])];
+  const fromBody=c=>unit(add3(add3(mul(side,c[0]),{x:0,y:c[1],z:0}),mul(fwd,c[2])));
+  const tNow=performance.now(),car=actv()==='driving',posture=seatedGuess?(car?'driving':'sitting'):'standing';
+  for(const [hp,kn,an,he,ft,th,sh,fo,key] of [[23,25,27,29,31,'thighL','shinL','footL','L'],[24,26,28,30,32,'thighR','shinR','footR','R']]){
+    const fresh=tNow-shadow.seen[kn]<300&&tNow-shadow.seen[an]<300;
+    if(fresh&&S[hp]&&S[kn]&&S[an]){             // remember this leg, relative to your hips, for this posture
+      const m=legMem[posture]||(legMem[posture]={});
+      m[key]={thigh:toBody(unit(sub3(S[kn],S[hp]))),shin:toBody(unit(sub3(S[an],S[kn]))),foot:S[ft]?toBody(unit(sub3(S[ft],S[an]))):null,at:Date.now()};
+      continue;}
+    const hidden=tNow-shadow.seen[kn]>800&&tNow-shadow.seen[an]>800;
+    if(!hidden||mode==='standing'&&posture!=='standing')continue;
+    const mem=legMem[mode==='standing'?'standing':posture]?.[key];
+    if(mem){                                       // seen before in this posture: rebuild it, turned with your hips
+      if(posture!=='standing')seated=true;
+      P[kn]=add3(P[hp],mul(fromBody(mem.thigh),L(th)));P[an]=add3(P[kn],mul(fromBody(mem.shin),L(sh)));
+      P[ft]=add3(P[an],mul(mem.foot?fromBody(mem.foot):fwd,L(fo)));P[he]=add3(P[an],add3({x:0,y:.04,z:0},mul(fwd,-.04)));
+      continue;}
+    if(!seatedGuess||mode==='standing')continue;
+    seated=true;
+    if(car){   // typical car: hip ~100°, knee ~120°, feet forward on the pedals
+      P[kn]=add3(P[hp],add3(mul(fwd,L(th)*.95),{x:0,y:-L(th)*.3,z:0}));
+      P[an]=add3(P[kn],add3({x:0,y:L(sh)*.8,z:0},mul(fwd,L(sh)*.6)));}
+    else{
+    P[kn]=add3(P[hp],add3(mul(fwd,L(th)*.98),{x:0,y:L(th)*.17,z:0}));
+    P[an]=add3(P[kn],add3({x:0,y:L(sh)*.99,z:0},mul(fwd,.04)));}
+    P[he]=add3(P[an],add3({x:0,y:.04,z:0},mul(fwd,-.04)));P[ft]=add3(P[an],add3({x:0,y:.05,z:0},mul(fwd,L(fo))));
+  }
+  if(actv()==='driving'){const sm=mid(P[11],P[12]),wc=add3(add3(sm,mul(fwd,.42)),{x:0,y:.16,z:0}),sd=unit(sub3(P[11],P[12]));
+    for(const [s0,e,w,ua,fa,k] of [[11,13,15,'uarmL','farmL',1],[12,14,16,'uarmR','farmR',-1]]){
+      if(tNow-shadow.seen[w]<800)continue;                  // seen: keep the real arm
+      const hand=add3(wc,mul(sd,.18*k)),toH=sub3(hand,P[s0]),el=add3(add3(P[s0],mul(toH,.5)),{x:0,y:.09,z:0});
+      P[e]=add3(P[s0],mul(unit(sub3(el,P[s0])),L(ua)));P[w]=add3(P[e],mul(unit(sub3(hand,P[e])),L(fa)));}}
+  const B=bodyModel();for(let i=0;i<33;i++)if(!P[i])P[i]=B[i];   // never-seen parts fall back to the still model
+  const lowest=Math.max(...[27,28,31,32].map(i=>P[i].y));     // keep feet on the floor grid
+  const out=P.map(p=>p?{x:p.x,y:p.y+(1.0-lowest),z:p.z}:null);
+  out.seated=actv()!=='standdesk'&&(seated||(recent&&lastPosture==='sitting'));out.fwd=fwd;return out;
+}
+function postureNotes(M){
+  const notes=[],deg=r=>r*180/Math.PI;
+  const shMid={x:(M[11].x+M[12].x)/2,y:(M[11].y+M[12].y)/2,z:(M[11].z+M[12].z)/2},hipMid={x:(M[23].x+M[24].x)/2,y:(M[23].y+M[24].y)/2,z:(M[23].z+M[24].z)/2};
+  const fwdHead=measures(M).head;
+  const lean=measures(M).lean;
+  const shTilt=Math.abs(M[11].y-M[12].y)*100,hipTilt=Math.abs(M[23].y-M[24].y)*100;
+  if(!sideFresh())notes.push('head & trunk lean: waiting for a camera to see your side (hips + shoulders)');
+  else if(fwdHead>25)notes.push(`head forward ${fwdHead.toFixed(0)}° — chin tucks, upper-back extension`);
+  if(sideFresh()&&lean>15)notes.push(`trunk leaning ${lean.toFixed(0)}° — check chair height / sit back`);
+  if(frontFresh(lastFrontSh)&&shTilt>3)notes.push(`shoulders uneven ${shTilt.toFixed(0)} cm — the low side often has tight lats/QL`);
+  if(frontFresh(lastFrontHips)&&hipTilt>3)notes.push(`hips uneven ${hipTilt.toFixed(0)} cm — glute med / QL balance`);
+  return notes.length?notes:['posture looks neutral right now'];
+}
+function covColor(c,alpha=1){const g=Math.round(90+150*c),r=Math.round(150-110*c),b=Math.round(150-90*c);return `rgba(${r},${g},${b},${alpha})`;}
+function drawBody(pose,opt={}){
+  const w=twin.width,h=twin.height;g.clearRect(0,0,w,h);
+  if(pose&&!scan.active&&!scan.waiting)frameFit(pose,w,h,true);else frameNeutral();
+  g.strokeStyle='rgba(126,217,87,.10)';g.lineWidth=1;
+  for(let i=-5;i<=5;i++){const a=project({x:i*.2,y:1.0,z:-1},w,h),b=project({x:i*.2,y:1.0,z:1},w,h);g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]);g.stroke();
+    const c=project({x:-1,y:1.0,z:i*.2},w,h),d=project({x:1,y:1.0,z:i*.2},w,h);g.beginPath();g.moveTo(c[0],c[1]);g.lineTo(d[0],d[1]);g.stroke();}
+  const M=pose||bodyModel(),P=M.map(p=>p?project(p,w,h):null);
+  if(pose&&!scan.active){computeStrain(M);if(recBuf)recBuf.push(poseSnapshot(M));}
+  // floor shadow: every bone dropped onto the floor gives the eye a depth cue
+  g.lineCap='round';g.strokeStyle='rgba(0,0,0,.45)';
+  for(const [a,b] of BONES){if(!M[a]||!M[b])continue;const fa=project({...M[a],y:1.0},w,h),fb=project({...M[b],y:1.0},w,h);
+    g.lineWidth=h/40*fa[3];g.beginPath();g.moveTo(fa[0],fa[1]);g.lineTo(fb[0],fb[1]);g.stroke();}
+  if(pose?.seated){if(actv()==='driving')drawCar(M,pose.fwd||{x:0,y:0,z:-1},w,h);else drawChair(M,pose.fwd||{x:0,y:0,z:-1},w,h);}
+  const rgbOf=opt.rgbOf||(i=>covRGB(jointCov(i)));
+  drawFigure(M,P,w,h,rgbOf,1,$('solid').checked,false);
+  let pl=[];if(pose&&!scan.active&&!scan.waiting)pl=actv()==='driving'?carNotes(M):drawProps(M,w,h);
+  if(opt.ghost){const GP=opt.ghost.map(p=>p?project(p,w,h):null);drawFigure(opt.ghost,GP,w,h,()=>[108,196,255],.8,false,true);}   // the fix, drawn over you
+  g.font='16px Segoe UI';g.textAlign='left';g.fillStyle='rgba(238,243,238,.85)';
+  if(opt.lines){textPanel([...opt.lines.map(([t,col],k)=>[t,col,!k]),...pl],w,h);}
+  else if(scan.waiting){g.font='600 26px Segoe UI';g.textAlign='center';g.fillText('Walk in until a camera sees you head to feet',w/2,48);
+    g.font='18px Segoe UI';g.fillText(scan.ready0?'got you — hold still…':'cameras can\'t see your '+(scan.missing||[]).join(', ')+' yet',w/2,78);
+    if(!scan.ready0&&scan.wait0&&performance.now()-scan.wait0>20000){g.fillStyle='rgba(255,179,71,.95)';
+      g.fillText('Tip: step back until camera A shows you head to feet (about 2.5 m), or switch to "seated scan".',w/2,106);}}
+  else if(scan.active){const st=SCAN_STEPS[scan.step],left=Math.max(0,st.secs-(performance.now()-scan.t0)/1000);
+    g.font='600 26px Segoe UI';g.textAlign='center';g.fillText(st.say,w/2,48);g.font='18px Segoe UI';g.fillText(`step ${scan.step+1} of ${SCAN_STEPS.length} · ${left.toFixed(0)} s`,w/2,78);}
+  else if(pose){textPanel([['Your body, moving with you','rgba(238,243,238,.9)',true],
+      ...postureNotes(M).map(t=>['• '+t,t.includes('neutral')?'rgba(126,217,87,.9)':'rgba(255,179,71,.95)']),...pl],w,h);}
+  else{g.fillText('Your body model — bright = seen well, grey/dashed = not yet seen',16,28);g.fillText(gapText(),16,52);}
+}
+$('scanBtn').onclick=startScan;
+const covRGB=c=>[Math.round(150-110*c),Math.round(90+150*c),Math.round(150-90*c)];
+const rgba=(c,a)=>`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`,shade=(c,k)=>c.map(v=>Math.max(0,Math.min(255,v*k)));
+// limb radius in metres (for the solid body)
+const RAD={'11-12':.06,'23-24':.08,'11-23':.085,'12-24':.085,'11-13':.045,'12-14':.045,'13-15':.037,'14-16':.037,'23-25':.075,'24-26':.075,'25-27':.052,'26-28':.052};
+// Segment volumes from YOUR mass (Dempster/Winter fractions, tissue density ~1.05 kg/L) and YOUR measured bone lengths -> limb thickness
+const segR=(frac,len)=>{const kg=parseFloat($('massKg').value)||98;return Math.sqrt(frac*kg/1050/(Math.PI*Math.max(.12,len)));};
+function hull2(pts){pts=[...pts].sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[],up=[];for(const p of pts){while(lo.length>1&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p);}
+  for(const p of pts.reverse()){while(up.length>1&&cr(up[up.length-2],up[up.length-1],p)<=0)up.pop();up.push(p);}return lo.slice(0,-1).concat(up.slice(0,-1));}
+function drawHumanoid(M,P,w,h,rgbOf,alpha){
+  const ppm=i=>h*0.42*viewScale*FRAME.z*P[i][3],items=[];
+  const shade=(c,k,a=alpha)=>`rgba(${Math.min(255,c[0]*k)|0},${Math.min(255,c[1]*k)|0},${Math.min(255,c[2]*k)|0},${a})`;
+  const taper=(A,B,ra,rb,c)=>{const dx=B[0]-A[0],dy=B[1]-A[1],l=Math.hypot(dx,dy)||1,nx=-dy/l,ny=dx/l;
+    for(const [Q,r] of [[A,ra],[B,rb]]){g.fillStyle=shade(c,.62);g.beginPath();g.arc(Q[0],Q[1],r,0,Math.PI*2);g.fill();}
+    const gr=g.createLinearGradient(A[0]-nx*ra,A[1]-ny*ra,A[0]+nx*ra,A[1]+ny*ra);gr.addColorStop(0,shade(c,.45));gr.addColorStop(.6,shade(c,.95));gr.addColorStop(1,shade(c,.6));
+    g.fillStyle=gr;g.beginPath();g.moveTo(A[0]+nx*ra,A[1]+ny*ra);g.lineTo(B[0]+nx*rb,B[1]+ny*rb);g.lineTo(B[0]-nx*rb,B[1]-ny*rb);g.lineTo(A[0]-nx*ra,A[1]-ny*ra);g.closePath();g.fill();};
+  const mixC=(a,b)=>{const x=rgbOf(a),y=rgbOf(b);return [0,1,2].map(k=>(x[k]+y[k])/2);};
+  const limb=(a,b,frac,ka,kb,ci)=>{if(!M[a]||!M[b])return;const r=segR(frac,d3(M[a],M[b]));
+    items.push({z:(P[a][2]+P[b][2])/2,draw:()=>taper(P[a],P[b],r*ka*ppm(a),r*kb*ppm(b),ci!=null?rgbOf(ci):mixC(a,b))});};
+  limb(11,13,.028,1.2,.85);limb(12,14,.028,1.2,.85);limb(13,15,.016,1.05,.72);limb(14,16,.016,1.05,.72);
+  limb(23,25,.1,1.12,.78,25);limb(24,26,.1,1.12,.78,26);limb(25,27,.0465,1.05,.62,27);limb(26,28,.0465,1.05,.62,28);
+  for(const [wr,el] of [[15,13],[16,14]])if(M[wr]&&M[el]){const v=v3(M[wr],M[el]),l=Math.hypot(v.x,v.y,v.z)||1,hc={x:M[wr].x+v.x/l*.08,y:M[wr].y+v.y/l*.08,z:M[wr].z+v.z/l*.08},Ph=project(hc,w,h);
+    items.push({z:Ph[2],draw:()=>{g.fillStyle=shade(rgbOf(wr),.85);g.beginPath();g.ellipse(Ph[0],Ph[1],.045*h*.42*viewScale*FRAME.z*Ph[3],.055*h*.42*viewScale*FRAME.z*Ph[3],0,0,Math.PI*2);g.fill();}});}
+  for(const [an,ft] of [[27,31],[28,32]])if(M[an]&&M[ft])items.push({z:(P[an][2]+P[ft][2])/2,draw:()=>taper(P[an],P[ft],.045*ppm(an),.035*ppm(ft),rgbOf(an))});
+  // torso: elliptical cross-sections at shoulders and pelvis; depth from trunk volume (your mass) / torso length
+  const sh=m3(M[11],M[12]),hp=m3(M[23],M[24]),fwd=M.fwd||{x:0,y:0,z:-1};
+  const sd=(()=>{const v=v3(M[11],M[12]),l=Math.hypot(v.x,v.y,v.z)||1;return {x:v.x/l,y:v.y/l,z:v.z/l};})();
+  const tl=d3(sh,hp),swh=d3(M[11],M[12])/2+.04,pwh=d3(M[23],M[24])/2+.06,area=.497*(parseFloat($('massKg').value)||98)/1050/Math.max(.3,tl);
+  const depth=Math.min(.2,Math.max(.09,area/(Math.PI*(swh+pwh)/2)));
+  const ring=(c,hw,dd)=>Array.from({length:12},(_,k)=>{const a=k/12*Math.PI*2,cs=Math.cos(a)*hw,sn=Math.sin(a)*dd;return project({x:c.x+sd.x*cs+fwd.x*sn,y:c.y+sd.y*cs,z:c.z+sd.z*cs+fwd.z*sn},w,h);});
+  const chest={x:sh.x+(hp.x-sh.x)*.12,y:sh.y+(hp.y-sh.y)*.12,z:sh.z+(hp.z-sh.z)*.12},waist={x:sh.x+(hp.x-sh.x)*.7,y:sh.y+(hp.y-sh.y)*.7,z:sh.z+(hp.z-sh.z)*.7};
+  const torsoPts=[...ring(chest,swh,depth*.9),...ring(waist,(swh+pwh)/2-.02,depth),...ring(hp,pwh,depth*.85)];
+  const tz=torsoPts.reduce((a,p)=>a+p[2],0)/torsoPts.length,tc=rgbOf(11),tcb=rgbOf(23);
+  items.push({z:tz,draw:()=>{const H=hull2(torsoPts.map(p=>[p[0],p[1]]));const cx=H.reduce((a,p)=>a+p[0],0)/H.length,cy=H.reduce((a,p)=>a+p[1],0)/H.length;
+    const gr=g.createRadialGradient(cx-30,cy-40,10,cx,cy,Math.max(60,Math.hypot(H[0][0]-cx,H[0][1]-cy)*1.2));gr.addColorStop(0,shade(tc,1.05));gr.addColorStop(.7,shade([0,1,2].map(k=>(tc[k]+tcb[k])/2),.7));gr.addColorStop(1,shade(tcb,.45));
+    g.fillStyle=gr;g.beginPath();H.forEach((p,k)=>k?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.closePath();g.fill();}});
+  // neck + head (head ~ 21 cm tall for an adult; nose shows which way the face points)
+  const ear=M[7]&&M[8]?m3(M[7],M[8]):M[0],hc={x:(ear.x*2+M[0].x)/3,y:(ear.y*2+M[0].y)/3-.03,z:(ear.z*2+M[0].z)/3},Phc=project(hc,w,h),Psh=project(sh,w,h);
+  const neckTop=project({x:(hc.x+sh.x)/2,y:(hc.y+sh.y)/2,z:(hc.z+sh.z)/2},w,h);
+  items.push({z:(Psh[2]+neckTop[2])/2,draw:()=>taper(Psh,neckTop,.065*h*.42*viewScale*FRAME.z*Psh[3],.055*h*.42*viewScale*FRAME.z*neckTop[3],rgbOf(0))});
+  const fdir=performance.now()-FACE.t<700&&FACE.dir?FACE.dir:(()=>{const v=v3(M[0],ear),l=Math.hypot(v.x,v.y,v.z)||1;return {x:v.x/l,y:v.y/l,z:v.z/l};})();
+  const nose=project({x:hc.x+fdir.x*.1,y:hc.y+fdir.y*.1,z:hc.z+fdir.z*.1},w,h);
+  const sideH={x:-fdir.z,y:0,z:fdir.x},sl=Math.hypot(sideH.x,sideH.z)||1,eyes=[-1,1].map(k=>project({x:hc.x+fdir.x*.085+sideH.x/sl*.035*k,y:hc.y+fdir.y*.085-.015,z:hc.z+fdir.z*.085+sideH.z/sl*.035*k},w,h));
+  items.push({z:Phc[2],draw:()=>{const r=.1*h*.42*viewScale*FRAME.z*Phc[3],c=rgbOf(0);const gr=g.createRadialGradient(Phc[0]-r*.35,Phc[1]-r*.4,r*.1,Phc[0],Phc[1],r*1.1);
+    gr.addColorStop(0,shade(c,1.15));gr.addColorStop(1,shade(c,.45));const drawNose=()=>{g.fillStyle=shade(c,.9);g.beginPath();g.arc(nose[0],nose[1],r*.2,0,Math.PI*2);g.fill();g.fillStyle='rgba(20,30,20,.9)';for(const e of eyes){g.beginPath();g.arc(e[0],e[1],r*.09,0,Math.PI*2);g.fill();}};
+    if(nose[2]>Phc[2])drawNose();g.fillStyle=gr;g.beginPath();g.ellipse(Phc[0],Phc[1],r*.9,r*1.08,0,0,Math.PI*2);g.fill();if(nose[2]<=Phc[2])drawNose();}});
+  items.sort((a,b)=>b.z-a.z).forEach(it=>it.draw());
+}
+function drawFigure(M,P,w,h,rgbOf,alpha,solid,ghost){
+  if(solid&&!ghost&&$('avatar').value==='human'&&[0,11,12,23,24].every(i=>M[i])){drawHumanoid(M,P,w,h,rgbOf,alpha);return;}
+  const px=(m,i)=>m*h*0.42*P[i][3];
+  const bones=BONES.filter(([a,b])=>M[a]&&M[b]).sort((x,y)=>(P[y[0]][2]+P[y[1]][2])-(P[x[0]][2]+P[x[1]][2]));
+  // torso first (it sits behind the limbs on its own side)
+  const tc=rgbOf(11);g.fillStyle=rgba(tc,(solid?.35:.18)*alpha);g.beginPath();[11,12,24,23].forEach((i,k)=>k?g.lineTo(P[i][0],P[i][1]):g.moveTo(P[i][0],P[i][1]));g.closePath();g.fill();
+  g.lineCap='round';
+  for(const [a,b] of bones){
+    const c=[0,1,2].map(k=>(rgbOf(a)[k]+rgbOf(b)[k])/2),dk=(P[a][3]+P[b][3])/2,fog=Math.max(.45,Math.min(1,dk*dk))*alpha;
+    const line=(lw,col,dx=0,dy=0)=>{g.lineWidth=lw;g.strokeStyle=col;g.beginPath();g.moveTo(P[a][0]+dx,P[a][1]+dy);g.lineTo(P[b][0]+dx,P[b][1]+dy);g.stroke();};
+    if(solid){const r=Math.max(2,px(RAD[a+'-'+b]??.025,a));   // shaded cylinder: dark body, lit core, highlight toward the light
+      line(2*r,rgba(shade(c,.45),.95*fog));line(1.35*r,rgba(shade(c,.8),.95*fog),-r*.18,-r*.18);line(.5*r,rgba(shade(c,1.25),.6*fog),-r*.35,-r*.35);}
+    else{g.setLineDash(ghost?[8,8]:[]);line(h/34*dk,rgba(c,.35*fog));line(2.5*dk,rgba(c,.95*fog));g.setLineDash([]);}
+  }
+  const hc=rgbOf(0),hr=solid?px(.1,0):h/26*P[0][3];
+  if(solid){const gr=g.createRadialGradient(P[0][0]-hr*.35,P[0][1]-hr*.35,hr*.1,P[0][0],P[0][1],hr);
+    gr.addColorStop(0,rgba(shade(hc,1.3),alpha));gr.addColorStop(1,rgba(shade(hc,.4),alpha));g.fillStyle=gr;g.beginPath();g.arc(P[0][0],P[0][1],hr,0,Math.PI*2);g.fill();}
+  else{g.strokeStyle=rgba(hc,.95*alpha);g.lineWidth=2;g.setLineDash(ghost?[8,8]:[]);g.beginPath();g.arc(P[0][0],P[0][1],hr,0,Math.PI*2);g.stroke();g.setLineDash([]);}
+  if(ghost)return;
+  for(const i of [11,12,13,14,15,16,23,24,25,26,27,28].sort((x,y)=>P[y][2]-P[x][2])){const c=rgbOf(i),r=solid?px(.03,i):(h/120+h/90*jointCov(i))*P[i][3];
+    g.fillStyle=rgba(solid?shade(c,1.15):c,alpha);g.beginPath();g.arc(P[i][0],P[i][1],r,0,Math.PI*2);g.fill();}
+}
+// ---- posture coach: hold a position, the twin flags what's off (red) and shows the fix (blue ghost) until you match it ----
+const ACT={sitting:{label:'sitting at the computer',th:{head:25,lean:15,shoulders:3,hips:3}},
+           standdesk:{label:'standing at a desk',th:{head:25,lean:10,shoulders:3,hips:3}},
+           phone:{label:'standing on the phone',th:{head:25,lean:10,shoulders:3,hips:3}},
+           driving:{label:'driving',th:{head:25,lean:20,shoulders:4,hips:4}}};
+const FIX={head:{standdesk:'ears over shoulders — raise the screen so its top is at eye level',sitting:'ears back over your shoulders — small chin tuck, screen at eye level',driving:'head back to the headrest — raise the seat back a notch',phone:'raise the phone to eye level instead of dropping your head'},
+  lean:{standdesk:'stand tall over mid-foot — bring the keyboard closer instead of leaning in',sitting:'sit back into the chair and stack shoulders over hips',driving:'sit back into the seat; move the seat closer instead of reaching',phone:'stand tall, weight over the middle of your feet'},
+  shoulders:{standdesk:'level shoulders — desk at elbow height, forearms relaxed',sitting:'level your shoulders — drop the high one, check armrest / mouse height',driving:'both hands low on the wheel (9 and 3), shoulders down',phone:'level your shoulders — swap the phone hand now and then'},
+  hips:{standdesk:'weight even on both feet — no hip hang; shift every few minutes',sitting:'weight even on both sit bones, feet flat',driving:'sit square; wallet out of the back pocket',phone:'weight even on both feet — no hip hang'}};
+const NAME={head:'head forward',lean:'trunk lean',shoulders:'uneven shoulders',hips:'uneven hips'};
+const ISSUE_JOINTS={head:[0,7,8],lean:[11,12,23,24],shoulders:[11,12,13,14],hips:[23,24,25,26]};
+const coach={pose:null,still:0,since:{},fixedAt:{},goodSince:0,log:[],t0:0};
+const v3=(a,b)=>({x:a.x-b.x,y:a.y-b.y,z:a.z-b.z}),m3=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2,z:(a.z+b.z)/2});
+function measures(M){
+  const sh=m3(M[11],M[12]),hp=m3(M[23],M[24]),hv=v3(M[7]&&M[8]?m3(M[7],M[8]):M[0],sh),tv=v3(sh,hp),deg=r=>r*180/Math.PI;   // ears over shoulders
+  const fw=M.fwd,fl=fw?Math.max(0,tv.x*fw.x+tv.z*fw.z):Math.hypot(tv.x,tv.z);   // forward lean only; leaning back into a chair is fine
+  const tl=Math.hypot(tv.x,tv.y,tv.z)||1,hl=Math.hypot(hv.x,hv.y,hv.z)||1,rel=deg(Math.acos(Math.max(-1,Math.min(1,(hv.x*tv.x+hv.y*tv.y+hv.z*tv.z)/(hl*tl)))));
+  return {head:rel,lean:deg(Math.atan2(fl,-tv.y)),
+    shoulders:Math.abs(M[11].y-M[12].y)*100,hips:Math.abs(M[23].y-M[24].y)*100};
+}
+function rotateTo(Q,idx,c,from,to){   // rotate joints idx about c so direction 'from' turns into 'to'
+  const n=a=>{const l=Math.hypot(a.x,a.y,a.z)||1;return {x:a.x/l,y:a.y/l,z:a.z/l};},f=n(from),t=n(to);
+  const ax={x:f.y*t.z-f.z*t.y,y:f.z*t.x-f.x*t.z,z:f.x*t.y-f.y*t.x},s=Math.hypot(ax.x,ax.y,ax.z);if(s<1e-6)return;
+  const k={x:ax.x/s,y:ax.y/s,z:ax.z/s},ang=Math.atan2(s,f.x*t.x+f.y*t.y+f.z*t.z),cs=Math.cos(ang),sn=Math.sin(ang);
+  for(const i of idx){const p=Q[i];if(!p)continue;const v=v3(p,c),kd=k.x*v.x+k.y*v.y+k.z*v.z;
+    Q[i]={x:c.x+v.x*cs+(k.y*v.z-k.z*v.y)*sn+k.x*kd*(1-cs),y:c.y+v.y*cs+(k.z*v.x-k.x*v.z)*sn+k.y*kd*(1-cs),z:c.z+v.z*cs+(k.x*v.y-k.y*v.x)*sn+k.z*kd*(1-cs)};}
+}
+const HEAD=[0,1,2,3,4,5,6,7,8,9,10],UPPER=[...HEAD,11,12,13,14,15,16,17,18,19,20,21,22];
+function corrected(M,issues){
+  const Q=M.map(p=>p&&{...p});
+  if(issues.includes('lean')){const hp=m3(Q[23],Q[24]);rotateTo(Q,UPPER,hp,v3(m3(Q[11],Q[12]),hp),{x:0,y:-1,z:0});}
+  if(issues.includes('shoulders')){const sh=m3(Q[11],Q[12]),d=v3(Q[11],Q[12]);rotateTo(Q,UPPER,sh,d,{x:d.x,y:0,z:d.z});}
+  if(issues.includes('hips')){const hp=m3(Q[23],Q[24]),d=v3(Q[23],Q[24]);rotateTo(Q,[23,24],hp,d,{x:d.x,y:0,z:d.z});}
+  if(issues.includes('head')){const sh=m3(Q[11],Q[12]),hv=v3(Q[7]&&Q[8]?m3(Q[7],Q[8]):Q[0],sh),fl=Math.hypot(hv.x,hv.z)||1,a=8*Math.PI/180;
+    rotateTo(Q,HEAD,sh,hv,{x:hv.x/fl*Math.sin(a),y:-Math.cos(a),z:hv.z/fl*Math.sin(a)});}   // ears just about over the shoulders
+  const lowest=Math.max(...[27,28,31,32].map(i=>Q[i].y));
+  const out=Q.map(p=>p&&{x:p.x,y:p.y+(1.0-lowest),z:p.z});out.seated=M.seated;out.fwd=M.fwd;return out;
+}
+function coachStep(){
+  const live=puppetPose(),now=performance.now();
+  if(!coach.pose){coach.pose=live.map(p=>p&&{...p});coach.still=now;}
+  let move=0;   // the coach twin follows you slowly, so it holds a position instead of chasing every twitch
+  for(let i=0;i<33;i++){const a=coach.pose[i],b=live[i];if(!a||!b){coach.pose[i]=b&&{...b};continue;}
+    move+=Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z);coach.pose[i]={x:a.x+(b.x-a.x)*.08,y:a.y+(b.y-a.y)*.08,z:a.z+(b.z-a.z)*.08};}
+  coach.pose.seated=live.seated;coach.pose.fwd=live.fwd;
+  if(move>0.5)coach.still=now;
+  const actKey=actv(),act=ACT[actKey],M=coach.pose,idle=now-coach.still>2000;
+  if(!idle){drawBody(M,{lines:[['Coach · '+act.label,'rgba(238,243,238,.9)'],['Settle into your position — I check it once you are still for 2 s','rgba(238,243,238,.6)']]});return;}
+  const m=measures(M),bad=Object.keys(act.th).filter(k=>m[k]>act.th[k]&&(k==='head'||k==='lean'?sideFresh():k==='hips'?frontFresh(lastFrontHips):frontFresh(lastFrontSh)));
+  for(const k of Object.keys(act.th)){
+    if(bad.includes(k)){if(!coach.since[k]){coach.since[k]=now;coach.t0=now;}}
+    else if(coach.since[k]){if(now-coach.since[k]>1500){coach.fixedAt[k]=now;coach.log.push({t:new Date().toISOString(),activity:actKey,issue:k,event:'fixed',value:+m[k].toFixed(1)});minuteEvent('coach_fixed',COACH_REGION[k]);}
+      delete coach.since[k];}
+  }
+  const red=bad.filter(k=>now-coach.since[k]>1500);   // only flag what holds for 1.5 s
+  for(const k of red)if(!coach['logged_'+k]){coach['logged_'+k]=1;coach.log.push({t:new Date().toISOString(),activity:actKey,issue:k,event:'flagged',value:+m[k].toFixed(1)});minuteEvent('coach_flag',COACH_REGION[k]);}
+  for(const k of Object.keys(act.th))if(!bad.includes(k))coach['logged_'+k]=0;
+  const redJ=new Set(red.flatMap(k=>ISSUE_JOINTS[k])),greenJ=new Set(Object.entries(coach.fixedAt).filter(([k,t])=>now-t<4000).flatMap(([k])=>ISSUE_JOINTS[k]));
+  const rgbOf=i=>redJ.has(i)?[255,80,70]:greenJ.has(i)?[126,217,87]:[150,205,160];
+  let ghost=null;
+  if(red.length){const T=corrected(M,red),ph=((now-coach.t0)/2600)%1.5,e=Math.min(1,ph)**2*(3-2*Math.min(1,ph));   // ease in, hold, repeat
+    ghost=M.map((p,i)=>p&&T[i]&&{x:p.x+(T[i].x-p.x)*e,y:p.y+(T[i].y-p.y)*e,z:p.z+(T[i].z-p.z)*e});ghost.seated=M.seated;ghost.fwd=M.fwd;}
+  if(!red.length&&!coach.goodSince)coach.goodSince=now;if(red.length)coach.goodSince=0;
+  const lines=[['Coach · '+act.label,'rgba(238,243,238,.9)']];
+  if(red.length){lines.push(['Red = needs a change · blue ghost = the fix. Move with the ghost.','rgba(238,243,238,.6)']);
+    for(const k of red)lines.push([`• ${NAME[k]} (${k==='head'||k==='lean'?m[k].toFixed(0)+'°':m[k].toFixed(0)+' cm'}) — ${FIX[k][actKey]}`,'rgba(255,120,110,.95)']);}
+  else lines.push([`Good position ✓ held ${((now-coach.goodSince)/1000).toFixed(0)} s`,'rgba(126,217,87,.95)']);
+  for(const [k,t] of Object.entries(coach.fixedAt))if(now-t<4000)lines.push([`✓ fixed: ${NAME[k]}`,'rgba(126,217,87,.95)']);
+  drawBody(M,{ghost,rgbOf,lines});
+}
+function drawProps(M,w,h){
+  const fwd=M.fwd||{x:0,y:0,z:-1},side={x:fwd.z,y:0,z:-fwd.x},act=actv(),out=[];
+  const hip=m3(M[23],M[24]),at=(b,f,sd,y)=>({x:b.x+fwd.x*f+side.x*sd,y,z:b.z+fwd.z*f+side.z*sd}),P3=q=>project(q,w,h);
+  const poly=(pts,stroke,fill)=>{const q=pts.map(P3);g.beginPath();q.forEach((p,k)=>k?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.closePath();
+    if(fill){g.fillStyle=fill;g.fill();}g.strokeStyle=stroke;g.lineWidth=1.5;g.stroke();};
+  const ring=(c,r,y,stroke,fill)=>poly(Array.from({length:16},(_,k)=>{const a=k/16*Math.PI*2;return at(c,Math.cos(a)*r,Math.sin(a)*r,y);}),stroke,fill);
+  const seg=(a,b,col)=>{const p=P3(a),q=P3(b);g.strokeStyle=col;g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(q[0],q[1]);g.stroke();};
+  const gaze=(eye,tgt,name,limit)=>{const ang=Math.atan2(tgt.y-eye.y,Math.hypot(tgt.x-eye.x,tgt.z-eye.z))*180/Math.PI-(FACE.level||0);
+    g.setLineDash([4,6]);g.lineWidth=1;seg(eye,tgt,'rgba(255,230,140,.6)');g.setLineDash([]);
+    out.push([`${name}: ${Math.abs(ang).toFixed(0)}° ${ang>=0?'below':'above'} eye level`+(ang>limit?` — raise it (aim ≤ ${limit}°)`:' ✓'),ang>limit?'rgba(255,179,71,.95)':'rgba(255,230,140,.9)']);};
+  const earM=M[7]&&M[8]?m3(M[7],M[8]):null,eye=earM?{x:earM.x+(M[0].x-earM.x)*.6,y:earM.y+(M[0].y-earM.y)*.6,z:earM.z+(M[0].z-earM.z)*.6}:M[0];
+  const faceLive=performance.now()-FACE.t<700&&FACE.gaze;
+  const face=faceLive?FACE.gaze:earM?(()=>{const v=v3(M[0],earM),l=Math.hypot(v.x,v.y,v.z)||1;return {x:v.x/l,y:v.y/l,z:v.z/l};})():fwd;
+  const lookingAt=q=>{const v=v3(q,eye),l=Math.hypot(v.x,v.y,v.z)||1;return Math.acos(Math.max(-1,Math.min(1,(v.x*face.x+v.y*face.y+v.z*face.z)/l)))*180/Math.PI;};
+  const using=[];
+  const device=(hand,elbow,head,wd,ht,name)=>{
+    const dir=elbow?(()=>{const v=v3(hand,elbow),l=Math.hypot(v.x,v.y,v.z)||1;return {x:v.x/l,y:v.y/l,z:v.z/l};})():{x:0,y:0,z:0};
+    const c={x:hand.x+dir.x*.05,y:hand.y+dir.y*.05-.02,z:hand.z+dir.z*.05};
+    let n=v3(head,c);const nl=Math.hypot(n.x,n.y,n.z)||1;n={x:n.x/nl,y:n.y/nl,z:n.z/nl};
+    let u={x:-n.z,y:0,z:n.x};const ul=Math.hypot(u.x,u.z)||1;u={x:u.x/ul,y:0,z:u.z/ul};
+    const v={x:u.y*n.z-u.z*n.y,y:u.z*n.x-u.x*n.z,z:u.x*n.y-u.y*n.x};
+    const cn=(a,b)=>({x:c.x+u.x*a*wd/2+v.x*b*ht/2,y:c.y+u.y*a*wd/2+v.y*b*ht/2,z:c.z+u.z*a*wd/2+v.z*b*ht/2});
+    const looking=lookingAt(c)<40;
+    poly([cn(-1,-1),cn(1,-1),cn(1,1),cn(-1,1)],looking?'rgba(200,220,240,.95)':'rgba(200,220,240,.45)',looking?'rgba(108,196,255,.35)':'rgba(108,196,255,.1)');
+    if(looking){using.push(name);gaze(eye,c,name,30);}else out.push([`holding ${name} (not looking at it)`,'rgba(238,243,238,.55)']);};
+  let deskY=null;
+  const wr={L:M[15],R:M[16]},elb={L:M[13],R:M[14]},higher=wr.L.y<wr.R.y?'L':'R';
+  const ahead=q=>{const v=v3(q,hip);return v.x*fwd.x+v.z*fwd.z;};
+  const knM=m3(M[25],M[26]),kA=Math.max(.1,ahead(knM)),thighY=a=>hip.y+(knM.y-hip.y)*Math.max(0,Math.min(1.2,a/kA));
+  const overLap=q=>q.y<thighY(ahead(q))-.08;   // typing hands hover well above the thighs; phone-in-lap hands rest near them
+  const reach=Math.max(.35,.8*kA);   /* keyboard hands reach out past mid-thigh, toward the knees and beyond */
+  const standDesk=act==='standdesk';
+  const typing=((M.seated||standDesk)&&!live('phone')&&ahead(wr.L)>reach&&ahead(wr.R)>reach&&overLap(wr.L)&&overLap(wr.R)&&d3(wr.L,wr.R)<.7)||(live('laptop')&&!seenObj.laptop.hand)||(live('desk')&&seenObj.desk.label==='keyboard');
+  const realCam=faceLive&&FACE.cam&&FACE.camKey==='B';   // the laptop camera sits on top of the screen: we know where the screen is
+  const camTop=realCam?{x:eye.x+FACE.cam.x,y:eye.y+FACE.cam.y,z:eye.z+FACE.cam.z}:null;
+  const deskOn=((M.seated||standDesk)&&$('propDesk').checked)||live('desk')||typing||(realCam&&(M.seated||standDesk));
+  if(deskOn){
+    deskY=realCam?camTop.y+.23:typing?Math.max(wr.L.y,wr.R.y)+.03:Math.min(hip.y-.15,Math.max(M[13].y,M[14].y)+.03);   // under your hands while typing
+    poly([at(hip,.3,-.6,deskY),at(hip,.95,-.6,deskY),at(hip,.95,.6,deskY),at(hip,.3,.6,deskY)],'rgba(210,175,120,.75)','rgba(210,175,120,.12)');
+    g.lineWidth=1.5;for(const [f,sd] of [[.32,-.58],[.93,-.58],[.93,.58],[.32,.58]])seg(at(hip,f,sd,deskY),at(hip,f,sd,1.0),'rgba(210,175,120,.6)');
+    if(realCam&&$('propDesk').checked){                          // real laptop: screen top at the measured camera position
+      const T=camTop,S=(a,b,c)=>({x:T.x+side.x*a-fwd.x*c,y:T.y+b,z:T.z+side.z*a-fwd.z*c});
+      poly([S(-.17,0,0),S(.17,0,0),S(.17,.22,.05),S(-.17,.22,.05)],'rgba(180,200,220,.9)','rgba(108,196,255,.28)');
+      poly([S(-.17,.22,.05),S(.17,.22,.05),S(.17,.22,.27),S(-.17,.22,.27)],'rgba(180,200,220,.8)','rgba(50,60,70,.6)');
+      const sc=S(0,.11,.025);
+      if(FACE.look==='screen'||typing){using.push('laptop');gaze(eye,sc,'screen',20);}else out.push(['laptop (not looking at it)','rgba(238,243,238,.55)']);}
+    else if(typing&&($('propDesk').checked||live('laptop'))){    // no face lock: laptop sits under your hands, screen just beyond them
+      using.push('laptop');const y=deskY-.01,hc=m3(wr.L,wr.R),b0=ahead(hc)-.05,b1=b0+.24,sx=(hc.x-hip.x)*side.x+(hc.z-hip.z)*side.z;
+      poly([at(hip,b0,sx-.17,y),at(hip,b1,sx-.17,y),at(hip,b1,sx+.17,y),at(hip,b0,sx+.17,y)],'rgba(180,200,220,.8)','rgba(50,60,70,.6)');
+      poly([at(hip,b1,sx-.17,y),at(hip,b1+.05,sx-.17,y-.22),at(hip,b1+.05,sx+.17,y-.22),at(hip,b1,sx+.17,y)],'rgba(180,200,220,.9)','rgba(108,196,255,.28)');
+      gaze(eye,at(hip,b1+.025,sx,y-.11),'screen',20);}
+  }
+  const handOf=k=>live(k)&&seenObj[k].hand?seenObj[k].hand:higher;
+  // phone: the camera sees one, or a hand is raised in front of you and your face points at it
+  const raised=k=>!(FACE.handOnFace>.5&&d3(wr[k],M[0])<.22)&&wr[k].y<elb[k].y-.03&&ahead(wr[k])>.1&&(lookingAt(wr[k])<45||d3(wr[k],eye)<.45);
+  const phonePose=!typing&&(raised('L')||raised('R'));
+  if(live('phone')||($('propPhone').checked&&phonePose)){const hd=live('phone')&&seenObj.phone.hand?seenObj.phone.hand:(raised('L')&&(!raised('R')||wr.L.y<wr.R.y)?'L':'R');device(wr[hd],elb[hd],M[0],.075,.15,'phone');}
+  if(live('tablet')||($('propTablet').checked&&phonePose&&d3(wr.L,wr.R)<.4)){const two=d3(wr.L,wr.R)<.45,hd=handOf('tablet');device(two?m3(wr.L,wr.R):wr[hd],two?null:elb[hd],M[0],.25,.18,'tablet');}
+  if($('propDrink').checked||live('drink')){
+    const near=d3(wr.L,M[0])<d3(wr.R,M[0])?'L':'R',sip=d3(wr[near],M[0])<.2,held=live('drink')&&seenObj.drink.hand;
+    const hd=held?seenObj.drink.hand:near,base=(sip||held)?{...wr[hd],y:wr[hd].y+.05}:deskY!=null?at(hip,.5,.38,deskY):null;
+    if(base){ring(base,.04,base.y,'rgba(240,200,150,.9)','rgba(240,200,150,.15)');ring(base,.045,base.y-.11,'rgba(240,200,150,.9)','rgba(120,80,40,.5)');
+      g.lineWidth=1.5;for(const sd of [-.04,.04])seg(at(base,0,sd,base.y),at(base,0,sd*1.1,base.y-.11),'rgba(240,200,150,.9)');}
+    if(sip)out.push(['drinking — nice, keep sipping water through the day','rgba(108,196,255,.9)']);}
+  if(($('propFood').checked||live('food'))&&deskY!=null){const c=at(hip,.48,-.36,deskY-.005);
+    ring(c,.11,c.y,'rgba(240,240,230,.8)','rgba(240,240,230,.15)');ring(c,.05,c.y-.02,'rgba(230,160,90,.8)','rgba(230,160,90,.4)');}
+  if(!using.length&&(earM||faceLive)){const tip={x:eye.x+face.x*.45,y:eye.y+face.y*.45,z:eye.z+face.z*.45};g.setLineDash([3,6]);g.lineWidth=1;seg(eye,tip,'rgba(255,230,140,.45)');g.setLineDash([]);
+    const pitch=Math.atan2(face.y,Math.hypot(face.x,face.z))*180/Math.PI-(faceLive?FACE.level:0);out.push([`${faceLive?'eyes':'head'} pointing ${Math.abs(pitch).toFixed(0)}° ${pitch>=0?'down':'up'}`,'rgba(255,230,140,.75)']);}
+  else if(using.length)out.push(['using: '+using.join(', '),'rgba(108,196,255,.9)']);
+  for(const fn of faceNotes())out.push(fn);
+  for(const sl of strainLines())out.push(sl);
+  for(const fl of focusLines())out.push(fl);
+  lastUsing=using.slice();
+  const spotted=Object.entries(seenObj).filter(([k])=>live(k)).map(([k,o])=>o.label+(o.hand?` (${o.hand==='L'?'left':'right'} hand)`:''));
+  if(spotted.length)out.push(['camera sees: '+spotted.join(', '),'rgba(238,243,238,.55)']);
+  return out;
+}
+// ---- plain-language twin quality: is it stable, or what movement does it still need? ----
+const SEG_NAME={pelvis:'hips',shoulders:'shoulders',torsoL:'left side of your torso',torsoR:'right side of your torso',uarmL:'left upper arm',uarmR:'right upper arm',
+  farmL:'left forearm',farmR:'right forearm',thighL:'left thigh',thighR:'right thigh',shinL:'left shin',shinR:'right shin'};
+function twinAdvice(){
+  const todo=[];
+  for(const b of CORE){const a=scan.len[b]||[];if(a.length<30){todo.push(`show me your ${SEG_NAME[b]}: move it slowly where a camera can see it`);continue;}
+    const q=[...a].sort((x,y)=>x-y),m=q[q.length>>1],iqr=q[(3*q.length)>>2]-q[q.length>>2];
+    if(iqr/m>((b==='pelvis'||b==='shoulders')?.3:b.startsWith('farm')?.25:.15))todo.push(`${SEG_NAME[b]} is still jittery: hold it still in good light for ~5 s`);}
+  const cv=coverage();for(const [n,v] of Object.entries(cv))if(n!=='overall'&&v<.5)todo.push(`turn so a camera sees your ${n}`);
+  return todo;
+}
+function showTwinState(){
+  const el=$('twinState'),todo=twinAdvice();
+  if(!todo.length){el.textContent='dtom: stable ✓ — no extra movement needed. Just work normally.';el.style.color='var(--accent)';}
+  else{el.textContent=`dtom: needs more movement (${todo.length}) → `+todo.slice(0,2).join(' · ');el.style.color='var(--hot)';}
+}
+setInterval(()=>{try{showTwinState();}catch(e){}},1500);
+// ---- 3D camera placement guide, sized to YOUR body (scan) and your webcam cord ----
+function wingspan(){return boneLen('shoulders')+boneLen('uarmL')+boneLen('uarmR')+boneLen('farmL')+boneLen('farmR')+0.38;}
+function drawGuide(){frameNeutral();
+  const w=twin.width,h=twin.height;g.clearRect(0,0,w,h);
+  const mode=$('guideFor').value,cv=$('cordLen').value,cord=cv==='ws'?wingspan():parseFloat(cv);
+  const VF=43*Math.PI/180,HF=70*Math.PI/180;   // Logitech C925e ≈ 78° diagonal → ~70° x 43°
+  const fwd={x:0,y:0,z:-1},side={x:1,y:0,z:0},FLOOR=1.0;
+  const L=b=>boneLen(b),B=bodyModel();
+  // canonical body: seated (desk) or standing, measured proportions, feet on the floor
+  const P=B.map(q=>q&&{...q});
+  if(mode==='seated'){const hipY=FLOOR-(L('shinL')+.07);const dy=hipY-(P[23].y);for(const q of P)if(q)q.y+=dy;
+    for(const [hp,kn,an,he,ft,th,sh] of [[23,25,27,29,31,'thighL','shinL'],[24,26,28,30,32,'thighR','shinR']]){
+      P[kn]={x:P[hp].x,y:P[hp].y+.03,z:P[hp].z-L(th)};P[an]={x:P[kn].x,y:FLOOR-.06,z:P[kn].z-.03};
+      P[he]={x:P[an].x,y:FLOOR-.02,z:P[an].z+.04};P[ft]={x:P[an].x,y:FLOOR-.01,z:P[an].z-.16};}}
+  const hip=m3(P[23],P[24]),top=mode==='seated'?P[11].y-.08:Math.min(P[0].y-.12,P[11].y-.3),ext=FLOOR-top;   // seated: B has your head, A needs shoulders→feet
+  const body={x:hip.x,y:(top+FLOOR)/2,z:hip.z-(mode==='seated'?.15:0)};
+  const need=(ext/2*1.15)/Math.tan(VF/2);                                                // distance so head-to-feet fits A's view
+  const deskY=FLOOR-.74,lap={x:0,y:deskY,z:hip.z-.55},usb={x:lap.x+.17,y:deskY,z:lap.z};
+  const camB={x:0,y:deskY-.24,z:lap.z-.12};
+  let camA={x:hip.x+need,y:mode==='seated'?body.y:FLOOR-1.1,z:body.z},mirror=null;
+  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+  let cordFits=dist(camA,usb)<=cord-.1;
+  if(!cordFits){   // too far for the cord: put A near the desk and bounce off a mirror on the wall beside you
+    mirror={x:hip.x+Math.max(.9,need*.55),y:FLOOR-1.0,z:body.z+.2};
+    camA={x:usb.x+.25,y:deskY-.1,z:usb.z+.35};
+    const eff=dist(camA,mirror)+dist(mirror,body);cordFits=dist(camA,usb)<=cord-.1;mirror.eff=eff;}
+  // centre the scene and draw small
+  const cen={x:(hip.x+(mirror?mirror.x:camA.x))/2,y:.25,z:(hip.z+lap.z)/2};
+  const T=q=>({x:q.x-cen.x,y:q.y-cen.y,z:q.z-cen.z});viewScale=.42;
+  const PR=q=>project(T(q),w,h);
+  const seg=(a,b,col,lw=1.5,dash)=>{const p=PR(a),q=PR(b);g.strokeStyle=col;g.lineWidth=lw;g.setLineDash(dash||[]);g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(q[0],q[1]);g.stroke();g.setLineDash([]);};
+  const poly=(pts,stroke,fill)=>{const q=pts.map(PR);g.beginPath();q.forEach((p,k)=>k?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.closePath();if(fill){g.fillStyle=fill;g.fill();}g.strokeStyle=stroke;g.lineWidth=1.5;g.stroke();};
+  // floor grid (3 x 3 m)
+  for(let i=-15;i<=15;i++){seg({x:cen.x+i*.1,y:FLOOR,z:cen.z-1.5},{x:cen.x+i*.1,y:FLOOR,z:cen.z+1.5},'rgba(126,217,87,'+(i%5?.05:.14)+')',1);
+    seg({x:cen.x-1.5,y:FLOOR,z:cen.z+i*.1},{x:cen.x+1.5,y:FLOOR,z:cen.z+i*.1},'rgba(126,217,87,'+(i%5?.05:.14)+')',1);}
+  // cord reach: circle on the floor around the laptop's USB port
+  poly(Array.from({length:48},(_,k)=>{const a=k/48*Math.PI*2;return {x:usb.x+Math.cos(a)*cord,y:FLOOR,z:usb.z+Math.sin(a)*cord};}),'rgba(255,230,140,.45)','rgba(255,230,140,.04)');
+  seg(usb,{x:usb.x,y:FLOOR,z:usb.z},'rgba(255,230,140,.4)',1,[3,4]);
+  // desk + laptop + chair
+  if(mode==='seated'){
+    poly([{x:-.6,y:deskY,z:lap.z+.2},{x:.6,y:deskY,z:lap.z+.2},{x:.6,y:deskY,z:lap.z-.45},{x:-.6,y:deskY,z:lap.z-.45}],'rgba(210,175,120,.7)','rgba(210,175,120,.1)');
+    for(const [x,z] of [[-.58,lap.z+.18],[.58,lap.z+.18],[.58,lap.z-.43],[-.58,lap.z-.43]])seg({x,y:deskY,z},{x,y:FLOOR,z},'rgba(210,175,120,.5)');
+    const seatY=hip.y+.06;poly([{x:-.23,y:seatY,z:hip.z+.12},{x:.23,y:seatY,z:hip.z+.12},{x:.23,y:seatY,z:hip.z-.3},{x:-.23,y:seatY,z:hip.z-.3}],'rgba(108,196,255,.5)','rgba(108,196,255,.06)');}
+  else poly([{x:-.6,y:deskY,z:lap.z+.2},{x:.6,y:deskY,z:lap.z+.2},{x:.6,y:deskY,z:lap.z-.45},{x:-.6,y:deskY,z:lap.z-.45}],'rgba(210,175,120,.4)','rgba(210,175,120,.05)');
+  poly([{x:-.17,y:deskY-.01,z:lap.z+.11},{x:.17,y:deskY-.01,z:lap.z+.11},{x:.17,y:deskY-.01,z:lap.z-.11},{x:-.17,y:deskY-.01,z:lap.z-.11}],'rgba(180,200,220,.8)','rgba(50,60,70,.6)');
+  poly([{x:-.17,y:deskY-.01,z:lap.z-.11},{x:.17,y:deskY-.01,z:lap.z-.11},{x:.17,y:deskY-.24,z:lap.z-.14},{x:-.17,y:deskY-.24,z:lap.z-.14}],'rgba(180,200,220,.9)','rgba(108,196,255,.2)');
+  // you
+  const PP=P.map(q=>q&&PR(q));drawFigure(P,PP,w,h,()=>[126,217,87],1,$('solid').checked,false);
+  // camera view cones
+  const cone=(c,tgt,col,len)=>{const f=(()=>{const v=v3(tgt,c),l=Math.hypot(v.x,v.y,v.z);return {x:v.x/l,y:v.y/l,z:v.z/l};})();
+    let r={x:-f.z,y:0,z:f.x};const rl=Math.hypot(r.x,r.z)||1;r={x:r.x/rl,y:0,z:r.z/rl};const u={x:r.y*f.z-r.z*f.y,y:r.z*f.x-r.x*f.z,z:r.x*f.y-r.y*f.x};
+    const th=Math.tan(HF/2),tv=Math.tan(VF/2),cn=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,b])=>({x:c.x+(f.x+r.x*a*th+u.x*b*tv)*len,y:c.y+(f.y+r.y*a*th+u.y*b*tv)*len,z:c.z+(f.z+r.z*a*th+u.z*b*tv)*len}));
+    for(const q of cn)seg(c,q,col,1);poly(cn,col,col.replace(/[\d.]+\)$/,'.05)'));
+    const p=PR(c);g.fillStyle=col.replace(/[\d.]+\)$/,'1)');g.beginPath();g.arc(p[0],p[1],7,0,Math.PI*2);g.fill();};
+  cone(camB,{x:0,y:P[0].y+.1,z:hip.z},'rgba(108,196,255,.7)',dist(camB,P[0])+.1);
+  if(mirror){poly([{x:mirror.x,y:mirror.y-.7,z:mirror.z-.3},{x:mirror.x,y:mirror.y-.7,z:mirror.z+.3},{x:mirror.x,y:FLOOR-.05,z:mirror.z+.3},{x:mirror.x,y:FLOOR-.05,z:mirror.z-.3}],'rgba(200,230,255,.9)','rgba(200,230,255,.15)');
+    seg(camA,mirror,'rgba(255,179,71,.8)',2,[6,5]);seg(mirror,body,'rgba(255,179,71,.8)',2,[6,5]);
+    const p=PR(camA);g.fillStyle='rgba(255,179,71,1)';g.beginPath();g.arc(p[0],p[1],7,0,Math.PI*2);g.fill();}
+  else cone(camA,body,'rgba(255,179,71,.7)',dist(camA,body)+.15);
+  const lab=(q,t,col)=>{const p=PR(q);g.font='600 15px Segoe UI';g.textAlign='left';g.fillStyle=col;g.fillText(t,p[0]+10,p[1]-10);};
+  lab(camB,'B · laptop','rgba(108,196,255,1)');lab(camA,'A · Logitech','rgba(255,179,71,1)');if(mirror)lab(mirror,'mirror','rgba(200,230,255,1)');
+  // instructions
+  const cm=v=>Math.round(v*100)+' cm',lines=[[`Camera placement · ${mode==='seated'?'seated work':'standing & exercise'} · sized to your body`,'rgba(238,243,238,.95)']];
+  lines.push([`B (laptop) stays at your keyboard: face, neck, shoulders. Screen top near eye level.`,'rgba(108,196,255,.95)']);
+  if(!mirror)lines.push([`A (Logitech): to your side, ${cm(need)} from your hips, lens ${cm(FLOOR-camA.y)} high, aimed at your hips${mode==='seated'?' (B has your head)':''}.`,'rgba(255,179,71,.95)'],
+     [`Tilt A until ${mode==='seated'?'your shoulders and feet':'both your head and feet'} show. Side-on is best for hip, knee and trunk angles.`,'rgba(255,179,71,.8)']);
+  else lines.push([`A is out of cord reach for a direct view (needs ${cm(need)}). Put A at the desk corner and aim it at a mirror`,'rgba(255,179,71,.95)'],
+     [`on the wall beside you, ~${cm(mirror.x-hip.x)} away. Bounce distance ≈ ${cm(mirror.eff)} — enough for head to feet. Tick "through a mirror: A".`,'rgba(255,179,71,.8)']);
+  lines.push([`Cord ${cm(cord)}${cv==='ws'?' (≈ your wingspan)':''}: A is ${cm(dist(camA,usb))} from the laptop's USB port → ${cordFits?'fits ✓':'too short ✗ — use a USB extension'}`,cordFits?'rgba(126,217,87,.95)':'rgba(255,120,110,.95)']);
+  lines.push(['Yellow circle = how far the cord reaches. Drag to look around; Side / Top views help.','rgba(238,243,238,.55)']);
+  g.textAlign='left';lines.forEach(([t,col],k)=>{g.fillStyle=col;g.font=(k?'':'600 ')+'15px Segoe UI';g.fillText(t,14,24+k*21);});
+  viewScale=1;
+}
+// ---- the car, assumed from typical dimensions: reclined seat + headrest, wheel in front of the chest, pedals at the feet ----
+function drawCar(M,fwd,w,h){
+  const hip={x:(M[23].x+M[24].x)/2,y:(M[23].y+M[24].y)/2+.06,z:(M[23].z+M[24].z)/2},side={x:fwd.z,y:0,z:-fwd.x};
+  const at=(f,s,y)=>project({x:hip.x+fwd.x*f+side.x*s,y,z:hip.z+fwd.z*f+side.z*s},w,h);
+  const poly=(pts,st,fi)=>{g.beginPath();pts.forEach((p,k)=>k?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.closePath();if(fi){g.fillStyle=fi;g.fill();}g.strokeStyle=st;g.stroke();};
+  g.lineWidth=2;const seat='rgba(108,196,255,.55)',fill='rgba(108,196,255,.08)';
+  poly([at(-.12,-.25,hip.y),at(.38,-.25,hip.y-.04),at(.38,.25,hip.y-.04),at(-.12,.25,hip.y)],seat,fill);          // cushion, front edge raised
+  poly([at(-.12,-.25,hip.y),at(-.12,.25,hip.y),at(-.32,.25,hip.y-.62),at(-.32,-.25,hip.y-.62)],seat,fill);      // backrest ~20° reclined
+  poly([at(-.33,-.13,hip.y-.66),at(-.33,.13,hip.y-.66),at(-.36,.13,hip.y-.86),at(-.36,-.13,hip.y-.86)],seat,fill); // headrest
+  const sh={x:(M[11].x+M[12].x)/2,y:(M[11].y+M[12].y)/2,z:(M[11].z+M[12].z)/2},wc={x:sh.x+fwd.x*.42,y:sh.y+.16,z:sh.z+fwd.z*.42};
+  g.strokeStyle='rgba(255,230,140,.75)';g.lineWidth=3;g.beginPath();
+  for(let k=0;k<=24;k++){const a=k/24*Math.PI*2,q=project({x:wc.x+side.x*Math.cos(a)*.19+fwd.x*Math.sin(a)*.06,y:wc.y+Math.sin(a)*.18,z:wc.z+side.z*Math.cos(a)*.19+fwd.z*Math.sin(a)*.06},w,h);k?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]);}
+  g.stroke();g.lineWidth=1.5;g.strokeStyle='rgba(255,230,140,.4)';
+  const col=project({x:wc.x+fwd.x*.25,y:wc.y+.1,z:wc.z+fwd.z*.25},w,h),wcp=project(wc,w,h);g.beginPath();g.moveTo(wcp[0],wcp[1]);g.lineTo(col[0],col[1]);g.stroke();
+  const dash=[at(.62,-.7,sh.y+.05),at(.62,.7,sh.y+.05),at(.75,.7,sh.y-.05),at(.75,-.7,sh.y-.05)];poly(dash,'rgba(255,230,140,.4)');
+  poly([at(.75,-.7,sh.y-.05),at(.75,.7,sh.y-.05),at(.35,.7,sh.y-.75),at(.35,-.7,sh.y-.75)],'rgba(133,183,235,.35)','rgba(133,183,235,.05)'); // windshield
+  for(const s2 of [-.1,.12]){const p0=at(.95,s2,1.0),p1=at(.9,s2,.9);g.strokeStyle='rgba(255,230,140,.6)';g.lineWidth=4;g.beginPath();g.moveTo(p0[0],p0[1]);g.lineTo(p1[0],p1[1]);g.stroke();}  // pedals
+}
+function carNotes(M){
+  const out=[],f=lastFused||{},kn=[f['L knee'],f['R knee']].filter(v=>v!=null),el=[f['L elbow'],f['R elbow']].filter(v=>v!=null),hp=[f['L hip'],f['R hip']].filter(v=>v!=null);
+  const avg=a=>a.reduce((x,y)=>x+y,0)/a.length,ok='rgba(255,230,140,.9)',warn='rgba(255,179,71,.95)';
+  if(hp.length){const v=avg(hp);out.push([`hips ${v.toFixed(0)}° (aim 95–110°)`+(v<90?' — very upright / cramped: recline the seatback one notch':v>115?' — reclined far; bring the seatback up a notch':' ✓'),v<90||v>115?warn:ok]);}
+  else out.push(['hips: not seen — car assumed (seat, wheel, pedals drawn from typical sizes)','rgba(238,243,238,.6)']);
+  if(kn.length){const v=avg(kn);out.push([`knees ${v.toFixed(0)}° (aim 110–130°)`+(v>140?' — legs nearly straight: seat one notch forward':v<100?' — cramped: seat one notch back':' ✓'),v>140||v<100?warn:ok]);}
+  if(el.length){const v=avg(el);out.push([`elbows ${v.toFixed(0)}° (aim 100–130°)`+(v>150?' — reaching: wheel or seat closer':' ✓'),v>150?warn:ok]);}
+  return out;
+}
+function drawChair(M,fwd,w,h){
+  const hip={x:(M[23].x+M[24].x)/2,y:(M[23].y+M[24].y)/2+.06,z:(M[23].z+M[24].z)/2};
+  const side={x:fwd.z,y:0,z:-fwd.x},at=(f,s,y)=>project({x:hip.x+fwd.x*f+side.x*s,y,z:hip.z+fwd.z*f+side.z*s},w,h);
+  const c=[[-.1,-.23],[.32,-.23],[.32,.23],[-.1,.23]];
+  g.strokeStyle='rgba(108,196,255,.55)';g.lineWidth=2;g.fillStyle='rgba(108,196,255,.08)';
+  g.beginPath();c.forEach(([f,s],k)=>{const p=at(f,s,hip.y);k?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]);});g.closePath();g.fill();g.stroke();
+  for(const [f,s] of c){const a=at(f,s,hip.y),b=at(f,s,1.0);g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]);g.stroke();}
+  const b1=at(-.12,-.23,hip.y),b2=at(-.12,.23,hip.y),b3=at(-.16,.23,hip.y-.45),b4=at(-.16,-.23,hip.y-.45);   // backrest
+  g.beginPath();g.moveTo(b1[0],b1[1]);g.lineTo(b4[0],b4[1]);g.lineTo(b3[0],b3[1]);g.lineTo(b2[0],b2[1]);g.stroke();
+}
+// ---- digital zoom: run the pose model on a crop that follows you, so a small figure (e.g. in a mirror) gets more pixels ----
+function cropFor(c){
+  const W=c.video.videoWidth,H=c.video.videoHeight,mode=$('z'+c.key).value;
+  const z=c.zs||(c.zs={cx:W/2,cy:H/2,z:1,auto:1,miss:0});
+  const target=z.focus&&z.miss<=20?z.auto:mode==='auto'?(z.miss>20?1:z.auto):parseFloat(mode);   // focus overrides the zoom setting
+  z.z+=(target-z.z)*0.06;
+  if(z.miss>45){z.cx+=(W/2-z.cx)*.05;z.cy+=(H/2-z.cy)*.05;}
+  const cw=W/z.z,ch=H/z.z,sx=Math.max(0,Math.min(W-cw,z.cx-cw/2)),sy=Math.max(0,Math.min(H-ch,z.cy-ch/2));
+  const cv=c.cv||(c.cv=document.createElement('canvas')),ow=Math.min(1280,W),oh=Math.round(ow*H/W);
+  if(cv.width!==ow||cv.height!==oh){cv.width=ow;cv.height=oh;}
+  c.flip=$(c.key==='A'?'aFlip':'bFlip')?.checked||false;const cx2=cv.getContext('2d');
+  if(c.flip){cx2.save();cx2.translate(ow,oh);cx2.rotate(Math.PI);cx2.drawImage(c.video,W-sx-cw,H-sy-ch,cw,ch,0,0,ow,oh);cx2.restore();}   // upright crop from an upside-down camera
+  else cx2.drawImage(c.video,sx,sy,cw,ch,0,0,ow,oh);
+  return c.crop={sx,sy,cw,ch,W,H};
+}
+// ---- line the cameras up: learn how far each camera is turned from camera B, then turn its view to match ----
+const yawOff={};let lastSide=0,lastFrontHips=0,lastFrontSh=0;const frontFresh=t=>performance.now()-t<1500;const sideFresh=()=>performance.now()-lastSide<1500;
+function bodyYaw(W,hips=true){const x=(hips?W[23].x-W[24].x:0)+(W[11].x-W[12].x),z=(hips?W[23].z-W[24].z:0)+(W[11].z-W[12].z);return Math.atan2(z,x);}
+function rotY(W,a){const c=Math.cos(a),s=Math.sin(a);return W.map(q=>({x:q.x*c-q.z*s,y:q.y,z:q.x*s+q.z*c}));}
+// ---- level each camera: while you stand straight, your feet→shoulders line is vertical; learn the camera's tilt from it ----
+const LEVEL={};
+// in the car you can't stand up to level a camera: sitting tall against the seatback for 3 s sets "upright" for each camera instead
+const CARLEVEL=(()=>{try{return JSON.parse(localStorage.getItem('nymbus.carlevel')||'{}');}catch(e){return {};}})(),SEATCAP={until:0,acc:{},ctx:'car'};
+const SEATLEVEL=(()=>{try{return JSON.parse(localStorage.getItem('nymbus.seatlevel')||'{}');}catch(e){return {};}})();
+function seatCapture(v){const W=v.world,V=i=>v.img[i].visibility??0;if(![11,12,23,24].every(i=>V(i)>.6))return;
+  let u=v3(m3(W[11],W[12]),m3(W[23],W[24]));const l=Math.hypot(u.x,u.y,u.z)||1;const a=SEATCAP.acc[v.c.key]||(SEATCAP.acc[v.c.key]={x:0,y:0,z:0,n:0});
+  a.x+=u.x/l;a.y+=u.y/l;a.z+=u.z/l;a.n++;}
+function seatFinish(){const done=[],car=SEATCAP.ctx==='car',T=car?CARLEVEL:SEATLEVEL;for(const k in SEATCAP.acc){const a=SEATCAP.acc[k];if(a.n<10)continue;const m=Math.hypot(a.x,a.y,a.z)||1;
+    T[k]={x:a.x/m,y:a.y/m,z:a.z/m};done.push(k);}
+  try{localStorage.setItem(car?'nymbus.carlevel':'nymbus.seatlevel',JSON.stringify(T));}catch(e){}
+  $(car?'driveUpright':'seatUpright').textContent=done.length?`Upright set ✓ (camera ${done.join(' + ')})`:'Could not see shoulders + hips: try again';}
+function levelView(v){
+  const W=v.world,V=i=>v.img[i].visibility??0,k=v.c.key,L=LEVEL[k]||(LEVEL[k]={u:null,n:0});
+  if(performance.now()<SEATCAP.until)seatCapture(v);
+  const SL=DRIVE.phase?CARLEVEL[k]:(actv()==='sitting'&&lastPosture!=='standing'?SEATLEVEL[k]:null);   // seated: the 'sit tall' reference; standing: learned below
+  if(SL){const Q=W.map(q=>({...q}));rotateTo(Q,[...Array(33).keys()],{x:0,y:0,z:0},SL,{x:0,y:-1,z:0});v.world=Q;return;}
+  const ang=(a,b,c)=>{const p=v3(a,b),q=v3(c,b),d=Math.hypot(p.x,p.y,p.z)*Math.hypot(q.x,q.y,q.z)||1;return Math.acos(Math.max(-1,Math.min(1,(p.x*q.x+p.y*q.y+p.z*q.z)/d)))*180/Math.PI;};
+  const straight=[[23,25,27],[24,26,28]].every(([h,kn,a])=>V(h)>.6&&V(kn)>.6&&V(a)>.6&&ang(W[h],W[kn],W[a])>160&&ang(W[a===27?11:12],W[h],W[kn])>160);
+  if(straight&&V(11)>.6&&V(12)>.6){let u=v3(m3(W[11],W[12]),m3(W[27],W[28]));const l=Math.hypot(u.x,u.y,u.z)||1;u={x:u.x/l,y:u.y/l,z:u.z/l};
+    if(!L.u)L.u=u;else{const w={x:L.u.x*.97+u.x*.03,y:L.u.y*.97+u.y*.03,z:L.u.z*.97+u.z*.03},m=Math.hypot(w.x,w.y,w.z)||1;L.u={x:w.x/m,y:w.y/m,z:w.z/m};}L.n++;}
+  if(L.u&&L.n>30){const Q=W.map(q=>({...q}));rotateTo(Q,[...Array(33).keys()],{x:0,y:0,z:0},L.u,{x:0,y:-1,z:0});v.world=Q;
+    L.tilt=Math.acos(Math.max(-1,Math.min(1,-L.u.y)))*180/Math.PI;}
+}
+function alignViews(views){
+  for(const v of views){levelView(v);v.ownYaw=bodyYaw(v.world,false);}   // how turned you are to this camera, before lining views up
+  const ref=views.find(v=>v.c.key==='B')||views[0];if(!ref)return;
+  const core=(v,th)=>[11,12,23,24].every(i=>(v.img[i].visibility??0)>th);   // side views half-hide the far shoulder/hip: accept a weaker far side, average over time
+  for(const v of views){if(v===ref)continue;const k=v.c.key,o=yawOff[k]||(yawOff[k]={s:0,c:0,n:0});
+    const shOK=(x,th)=>[11,12].every(i=>(x.img[i].visibility??0)>th),hipsOK=core(ref,.6)&&core(v,.25);
+    if(hipsOK||(shOK(ref,.6)&&shOK(v,.25))){const d=bodyYaw(ref.world,hipsOK)-bodyYaw(v.world,hipsOK);o.s=o.s*.98+Math.sin(d)*.02;o.c=o.c*.98+Math.cos(d)*.02;o.n++;}
+    v.rot=0;if(o.n>15){v.rot=Math.atan2(o.s,o.c);v.world=rotY(v.world,v.rot);}}
+  ref.rot=0;
+}
+function fuseViews(views){
+  const world=[],img=[];
+  for(let i=0;i<33;i++){let ws=0,x=0,y=0,z=0,best=0,bestP=null;
+    let wxs=0,wzs=0;
+    for(const v of views){const vi=v.img[i].visibility??0;if(vi>best){best=vi;bestP=v.world[i];}if(vi<.6)continue;
+      const wt=vi*vi,r=v.rot||0,wx=wt*(Math.cos(r)**2+.15),wz=wt*(Math.sin(r)**2+.15);   // each camera is trusted along its picture, not its depth
+      x+=v.world[i].x*wx;wxs+=wx;y+=v.world[i].y*wt;ws+=wt;z+=v.world[i].z*wz;wzs+=wz;}
+    world[i]=ws?{x:x/wxs,y:y/ws,z:z/wzs}:bestP;img[i]={visibility:best};}
+  const front=views.filter(v=>Math.abs(Math.cos(v.rot||0))>.7&&Math.abs(Math.sin(v.ownYaw||0))<.5);   // a camera seeing you in profile can't judge left/right height
+  if(front.some(v=>[23,24].every(i=>(v.img[i].visibility??0)>.6)))lastFrontHips=performance.now();
+  if(front.some(v=>[11,12].every(i=>(v.img[i].visibility??0)>.6)))lastFrontSh=performance.now();
+  if(views.some(v=>(Math.abs(Math.sin(v.rot||0))>.6||Math.abs(Math.sin(v.ownYaw||0))>.55)&&[11,23].some(i=>(v.img[i].visibility??0)>.6)))lastSide=performance.now();   // any camera seeing you in profile counts, e.g. a laptop on the passenger seat
+  return {c:{key:'fused'},world,img};
+}
+function trackJitter(c,r){
+  const lm=r?.landmarks?.length?r.landmarks.reduce((a,b)=>bodySize(b)>bodySize(a)?b:a):null;
+  if(!lm){c.lastSeen=c.lastSeen||0;return;}c.lastSeen=performance.now();
+  const pts=[11,12,23,24].map(i=>lm[i]),ys=lm.map(q=>q.y),hgt=Math.max(.05,Math.max(...ys)-Math.min(...ys));
+  if(c.prevT){const mv=pts.reduce((a,q,k)=>a+Math.hypot(q.x-c.prevT[k].x,q.y-c.prevT[k].y),0)/4/hgt;
+    const still=Object.values(motion).reduce((a,b)=>a+b,0)<.15;if(still&&mv<.03)c.jit=(c.jit??mv)*.95+mv*.05;/* ignore big jumps (you moving) */}
+  c.prevT=pts.map(q=>({x:q.x,y:q.y}));
+}
+// ---- dtom tells you how to adjust each camera ----
+function camAdvice(c){
+  if(c.off||!c.video.videoWidth)return null;
+  const tips=[],now=performance.now();
+  const lm=c.res?.landmarks?.length?c.res.landmarks.reduce((a,b)=>bodySize(b)>bodySize(a)?b:a):null;
+  if(!lm||now-(c.lastSeen||0)>1500){
+    tips.push('can’t find you — it must see your hips AND shoulders (legs alone aren’t enough): tilt it up or move it back');
+    if(c.luma!=null&&c.luma<.25)tips.push('too dark — turn on a light that faces you');
+    return tips;}
+  const vis=lm.filter(q=>(q.visibility??0)>.5),xs=vis.map(q=>q.x),ys=vis.map(q=>q.y);
+  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys),cx=(x0+x1)/2;
+  const head=(lm[0].visibility??0)>.5,feet=Math.max(lm[27].visibility??0,lm[28].visibility??0)>.5,seated=lastPosture==='sitting';
+  const z=c.crop?c.crop.W/c.crop.cw:1;
+  const shouldersIn=Math.max(lm[11].visibility??0,lm[12].visibility??0)>.5&&Math.min(lm[11].y,lm[12].y)>.03;
+  if(seated&&c.key==='A'&&shouldersIn){}   /* seated: camera B has your head, A only needs shoulders down */
+  else if(!head||y0<.03)tips.push('tilt it up a little — your head is cut off');
+  else if(!seated&&!feet&&y1>.95&&c.key!==faceCamKey())tips.push('tilt it down or move it back — your feet are cut off');
+  if(x0<.03||cx<.25)tips.push('turn it so you sit in the middle — you are at the left edge of its picture');
+  else if(x1>.97||cx>.75)tips.push('turn it so you sit in the middle — you are at the right edge of its picture');
+  if(y1-y0>.95&&x1-x0>.6)tips.push('move it back — you fill the whole picture');
+  else if((y1-y0)<.3&&z>2.5)tips.push('move it closer — you are small even with zoom');
+  const avgVis=lm.reduce((a,q)=>a+(q.visibility??0),0)/33;
+  if(avgVis<.45)tips.push(seated?'raise it or move it to the side — the desk/chair hides most of you':'something blocks most of you — clear the view or raise it');
+  if(c.luma!=null){
+    if(c.bodyLuma!=null&&c.luma-c.bodyLuma>.18&&avgVis<.6)tips.push('backlit — light behind you is brighter than you; face the light or turn a lamp toward you');
+    else if(c.luma<.25)tips.push('too dark — add a light that faces you');
+    else if(c.luma>.85)tips.push('too bright — angle it away from the window or lamp');}
+  return tips;
+}
+function showCamTips(){
+  const box=$('camTips');if(!box)return;const rows=[];
+  for(const c of CAMS){const t=camAdvice(c);if(t==null)continue;
+    rows.push(t.length?`<div style="color:var(--hot)"><b>dtom → camera ${c.key}:</b> ${t.slice(0,3).join(' · ')}</div>`
+      :`<div style="color:var(--accent)"><b>dtom → camera ${c.key}:</b> clear and steady ✓ — leave it${LEVEL[c.key]?.tilt!=null?` · tilt corrected ${LEVEL[c.key].tilt.toFixed(0)}°`:''}</div>`);}
+  box.innerHTML=rows.join('');
+}
+setInterval(()=>{try{showCamTips();}catch(e){}},1500);
+function followUpdate(c,r){
+  const z=c.zs;if(!z)return;
+  if(!r?.landmarks?.length){z.miss++;z.focus=false;z.focusCool=performance.now()+10000;return;}
+  // mirror in view: frame you AND your reflection; otherwise frame just you
+  const vis=($('mirrorAssist').checked?r.landmarks.flat():r.landmarks.reduce((a,b)=>bodySize(b)>bodySize(a)?b:a)).filter(p=>(p.visibility??1)>.5);
+  if(vis.length<6){z.miss++;z.focus=false;z.focusCool=performance.now()+10000;return;}z.miss=0;
+  const xs=vis.map(p=>p.x*c.crop.W),ys=vis.map(p=>p.y*c.crop.H);
+  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  z.cx+=((x0+x1)/2-z.cx)*.15;z.cy+=((y0+y1)/2-z.cy)*.15;
+  // auto: body fills ~70% of the crop (room to reach up / stretch), between 1x and 3x
+  z.auto=Math.max(1,Math.min(3,Math.min(.7*c.crop.H/Math.max(40,1.25*(y1-y0)),.7*c.crop.W/Math.max(40,x1-x0))));
+  { const big=r.landmarks.reduce((a,b)=>bodySize(b)>bodySize(a)?b:a); if(Math.max(big[27].visibility??0,big[28].visibility??0)<.5) z.auto=1;
+    z.focus=false;
+    const q=[0,11,12,23,24].reduce((a,i)=>a+(big[i].visibility??0),0)/5;          // only focus while this camera clearly tracks you
+    if(z.focus&&q<.55){z.focusCool=performance.now()+10000;}
+    const held=Date.now()-(strain.posStart||Date.now())>5000;
+    if(!held)z.focus=false;
+    if(FOCUS.region&&FOCUS.cam===c.key&&q>=.55&&held&&performance.now()>(z.focusCool||0)){const pts=REGION[FOCUS.region].joints.map(i=>big[i]).filter(q=>(q.visibility??0)>.4);
+      if(pts.length>=2){const fx=pts.map(q=>q.x*c.crop.W),fy=pts.map(q=>q.y*c.crop.H),bx0=Math.min(...fx),bx1=Math.max(...fx),by0=Math.min(...fy),by1=Math.max(...fy);
+        const bw=Math.max(.3*c.crop.W,(bx1-bx0)*1.8),bh=Math.max(.3*c.crop.H,(by1-by0)*1.8);   // keep plenty of context so the body tracker still locks
+        z.cx+=((bx0+bx1)/2-z.cx)*.12;z.cy+=((by0+by1)/2-z.cy)*.12;z.auto=Math.max(1,Math.min(1.8,Math.min(c.crop.W/bw,c.crop.H/bh)));z.focus=true;}}}   /* legs not in view: stay zoomed out so they can come into frame */
+}
+function showZoom(c){
+  const cr=c.crop,v=c.video;if(!cr||!v.clientWidth)return;
+  const bw=v.clientWidth,bh=v.clientHeight,s=Math.max(bw/cr.W,bh/cr.H),ox=(bw-cr.W*s)/2,oy=(bh-cr.H*s)/2,z=cr.W/cr.cw;
+  const px=ox+(cr.sx+cr.cw/2)*s,py=oy+(cr.sy+cr.ch/2)*s;
+  const rot=c.flip?` translate(${bw/2}px,${bh/2}px) rotate(180deg) translate(${-bw/2}px,${-bh/2}px)`:'';
+  v.style.transform=(z>1.02?`translate(${bw/2}px,${bh/2}px) scale(${z}) translate(${-px}px,${-py}px)`:'')+rot;
+  if(c.ov)c.ov.style.transform=z>1.02?`translate(${bw/2}px,${bh/2}px) scale(${z}) translate(${-px}px,${-py}px)`:'';
+  drawOverlay(c,s,ox,oy);
+}
+// what each camera actually detects, drawn on its own picture: skeleton + (laptop camera) head direction and gaze
+function drawOverlay(c,s,ox,oy){
+  const cv=c.ov;if(!cv)return;const bw=c.video.clientWidth,bh=c.video.clientHeight;
+  if(cv.width!==bw||cv.height!==bh){cv.width=bw;cv.height=bh;}const x=cv.getContext('2d');x.clearRect(0,0,bw,bh);
+  if(!$('showCams').checked)return;const W=c.video.videoWidth,H=c.video.videoHeight,X=q=>[ox+q.x*W*s,oy+q.y*H*s];
+  if($('blurOthers')?.checked&&c.others&&performance.now()-c.others.t<3000)for(const [a,b2,cc,d2] of c.others.boxes){
+    const p=X({x:a,y:b2}),q=X({x:cc,y:d2});x.fillStyle='rgba(20,24,20,.96)';x.fillRect(p[0],p[1],q[0]-p[0],q[1]-p[1]);
+    x.strokeStyle='rgba(238,243,238,.5)';x.lineWidth=2;x.beginPath();x.moveTo(p[0],p[1]);x.lineTo(q[0],q[1]);x.moveTo(q[0],p[1]);x.lineTo(p[0],q[1]);x.stroke();
+    x.fillStyle='rgba(238,243,238,.7)';x.font='12px Segoe UI';x.fillText('not you: hidden, not tracked',p[0]+6,p[1]+16);}
+  const lm=c.res?.landmarks?.length?c.res.landmarks.reduce((a,b)=>bodySize(b)>bodySize(a)?b:a):null;
+  if(lm){x.lineWidth=2;for(const [a,b] of BONES){const va=Math.min(lm[a].visibility??0,lm[b].visibility??0);if(va<.3)continue;
+      const p=X(lm[a]),q=X(lm[b]);x.strokeStyle=`rgba(126,217,87,${.25+.6*va})`;x.beginPath();x.moveTo(p[0],p[1]);x.lineTo(q[0],q[1]);x.stroke();}
+    for(const i of [0,7,8,11,12,13,14,15,16,23,24,25,26,27,28]){const v=lm[i].visibility??0;if(v<.3)continue;const p=X(lm[i]);x.fillStyle=`rgba(238,243,238,${.3+.6*v})`;x.beginPath();x.arc(p[0],p[1],3,0,Math.PI*2);x.fill();}}
+  if(lm&&FOCUS.region&&FOCUS.cam===c.key){const pts=REGION[FOCUS.region].joints.map(i=>lm[i]).filter(q=>(q.visibility??0)>.4).map(X);
+    if(pts.length>=2){const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),pad=18;x.strokeStyle='rgba(255,230,140,.9)';x.lineWidth=2;x.setLineDash([6,4]);
+      x.strokeRect(Math.min(...xs)-pad,Math.min(...ys)-pad,Math.max(...xs)-Math.min(...xs)+2*pad,Math.max(...ys)-Math.min(...ys)+2*pad);x.setLineDash([]);
+      x.fillStyle='rgba(255,230,140,.95)';x.font='600 12px Segoe UI';x.fillText('focus: '+REGION[FOCUS.region].name,Math.min(...xs)-pad,Math.min(...ys)-pad-4);}}
+  if(c.key===FACE.camKey&&performance.now()-FACE.t<700&&FACE.noseImg){
+    const n=X(FACE.noseImg),L=Math.min(bw,bh)*.35,arrow=(dx,dy,col,lab)=>{x.strokeStyle=col;x.fillStyle=col;x.lineWidth=3;x.beginPath();x.moveTo(n[0],n[1]);x.lineTo(n[0]+dx*L,n[1]+dy*L);x.stroke();
+      x.beginPath();x.arc(n[0]+dx*L,n[1]+dy*L,4,0,Math.PI*2);x.fill();x.font='600 12px Segoe UI';x.fillText(lab,n[0]+dx*L+6,n[1]+dy*L+4);};
+    arrow(FACE.dirCam.x,-FACE.dirCam.y,'rgba(108,196,255,.95)',`head ${Math.abs(FACE.pitch-FACE.level).toFixed(0)}° ${FACE.pitch-FACE.level>=0?'down':'up'}`);
+    if(FACE.gaze)arrow(FACE.gaze.x*((c.key==='B'&&$('bMirror').checked)?-1:1),FACE.gaze.y,'rgba(255,230,140,.95)','eyes');
+  }
+}
+function drawTwin(v){frameNeutral();
+  const w=twin.width,h=twin.height;g.clearRect(0,0,w,h);
+  // floor grid
+  g.strokeStyle='rgba(126,217,87,.10)';g.lineWidth=1;
+  for(let i=-5;i<=5;i++){const a=project({x:i*.2,y:1.0,z:-1},w,h),b=project({x:i*.2,y:1.0,z:1},w,h);g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]);g.stroke();
+    const c=project({x:-1,y:1.0,z:i*.2},w,h),d=project({x:1,y:1.0,z:i*.2},w,h);g.beginPath();g.moveTo(c[0],c[1]);g.lineTo(d[0],d[1]);g.stroke();}
+  if(!v){g.fillStyle='rgba(238,243,238,.5)';g.font='18px Segoe UI';g.textAlign='center';g.fillText('Building your shadow… stand where a camera sees you',w/2,h/2);return;}
+  if(v.pts){const s=v;v={world:s.pts.map(p=>p||{x:0,y:0,z:0}),img:s.conf.map((c,i)=>({visibility:s.pts[i]?c:0}))};}
+  const P=v.world.map(p=>project(p,w,h));
+  if(shadow.seat){const s=project(shadow.seat,w,h);g.strokeStyle='rgba(108,196,255,.5)';g.setLineDash([6,6]);g.strokeRect(s[0]-h/14,s[1]-h/60,h/7,h/30);g.setLineDash([]);}
+  // limbs: thick rounded "capsules" for a body silhouette
+  const bones=[...BONES].sort((a,b)=>(P[b[0]][2]+P[b[1]][2])-(P[a[0]][2]+P[a[1]][2]));
+  for(const [a,b] of bones){
+    const va=v.img[a].visibility??1,vb=v.img[b].visibility??1;if(va<.1||vb<.1)continue;
+    const live=Math.min(va,vb);g.globalAlpha=Math.max(.3,live);g.setLineDash(live<.5?[8,8]:[]);
+    const thick=(a===11&&b===12)||(a===23&&b===24)?h/38:([11,23].includes(a)&&[23,24].includes(b))?h/30:h/48;
+    g.lineCap='round';g.lineWidth=thick;g.strokeStyle='rgba(120,190,255,.28)';
+    g.beginPath();g.moveTo(P[a][0],P[a][1]);g.lineTo(P[b][0],P[b][1]);g.stroke();
+    g.lineWidth=2;g.strokeStyle='rgba(180,230,255,.9)';g.beginPath();g.moveTo(P[a][0],P[a][1]);g.lineTo(P[b][0],P[b][1]);g.stroke();
+  }
+  g.globalAlpha=1;g.setLineDash([]);
+  // torso fill
+  g.fillStyle='rgba(108,196,255,.12)';g.beginPath();[11,12,24,23].forEach((i,k)=>k?g.lineTo(P[i][0],P[i][1]):g.moveTo(P[i][0],P[i][1]));g.closePath();g.fill();
+  // head
+  const hd=P[I.nose];g.strokeStyle='rgba(180,230,255,.9)';g.lineWidth=2;g.beginPath();g.arc(hd[0],hd[1],h/28,0,Math.PI*2);g.stroke();
+  // joints: orange glow when moving, green ring when calibrated
+  for(const [n,ci] of Object.entries(JOINT_CENTER)){
+    const [x,y]=P[ci],m=motion[n]||0;
+    if(m>.05){g.fillStyle=`rgba(255,179,71,${.25+.55*m})`;g.beginPath();g.arc(x,y,h/45+h/40*m,0,Math.PI*2);g.fill();}
+    g.fillStyle='#eef3ee';g.beginPath();g.arc(x,y,h/130,0,Math.PI*2);g.fill();
+    if(standing?.angles?.[n]!=null){g.strokeStyle='rgba(126,217,87,.8)';g.lineWidth=1.5;g.beginPath();g.arc(x,y,h/70,0,Math.PI*2);g.stroke();}
+  }
+}
+twin.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,yaw,pitch};twin.setPointerCapture(e.pointerId);});
+twin.addEventListener('pointermove',e=>{if(!drag)return;yaw=drag.yaw+(e.clientX-drag.x)/200;pitch=Math.max(-1.5,Math.min(1.5,drag.pitch+(e.clientY-drag.y)/200));});
+twin.addEventListener('pointerup',()=>drag=null);
+const VIEWS={front:[0,.1],quarter:[.6,.2],side:[Math.PI/2,.1],back:[Math.PI,.1],top:[.3,1.45]};
+document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{$('turntable').checked=false;[yaw,pitch]=VIEWS[b.dataset.view];});twin.addEventListener('dblclick',()=>{yaw=.6;pitch=.2;});
+
+async function calScan(which){
+  $('calInfo').textContent='Hold still… 3';calBuf=[];
+  for(const n of [2,1]){await new Promise(r=>setTimeout(r,1000));$('calInfo').textContent='Hold still… '+n;}
+  await new Promise(r=>setTimeout(r,1000));const buf=calBuf;calBuf=null;
+  if(!buf.length){$('calInfo').textContent='No one detected — make sure a camera sees you head to feet.';return;}
+  const avg={};for(const tr of tbody.children){const n=tr.dataset.j,v=buf.map(b=>b[n]).filter(x=>x!=null);avg[n]=v.length?v.reduce((a,b)=>a+b)/v.length:null;}
+  const rec={at:new Date().toISOString(),clothing:$('clothing').value,frames:buf.length,angles:round(avg)};
+  if(which==='standing')standing=rec;else after=rec;
+  $('calInfo').textContent=which==='standing'?`Standing model saved (${rec.frames} frames, ${rec.clothing}). Now move — joints light up as they work. Sit and let camera B take over.`:`After-scan saved. The Δ column shows the change.`;
+}
+function exportJSON(){
+  const out={schema:'nymbus.twin_capture.v1',exported_at:new Date().toISOString(),
+    cameras:CAMS.filter(c=>!c.off).map(c=>c.sel.selectedOptions[0]?.textContent||c.key),
+    estimate:'3D joint angles fused from up to two webcams; not a clinical measurement',
+    note:$('note').value||null,standing_model:standing,after_scan:after,seat:shadow.seat,
+    body_model:scan.done?{bone_lengths_m:Object.fromEntries(Object.keys(BONE_DEF).map(b=>[b,median(scan.len[b])&&Math.round(median(scan.len[b])*1000)/1000])),
+      coverage:Object.fromEntries(Object.entries(coverage()).map(([k,v])=>[k,Math.round(v*100)/100])),
+      range_of_motion_deg:Object.fromEntries(Object.entries(scan.rom).map(([k,r])=>[k,{min:Math.round(r.min),max:Math.round(r.max)}]))}:null,
+    shadow_confidence:Object.fromEntries(Object.entries(JOINT_CENTER).map(([n,i])=>[n,Math.round(shadow.conf[i]*100)/100])),
+    posture_seconds:{sitting:Math.round(pTime.sitting),standing:Math.round(pTime.standing)},coach_log:coach.log,face_log:FACE.log,posture_samples_v0:poseSamples,focus_region:FOCUS.region,samples};
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,1)],{type:'application/json'}));
+  a.download='twin-capture-'+new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')+'.json';a.click();URL.revokeObjectURL(a.href);
+}
+const SAVE_KEY='nymbus.twin.v1',SETTINGS=['blurOthers','speakOn','aTurn','bTurn','night','faceCam','aFlip','bFlip','sendNymbus','focusMode','avatar','massKg','strainView','poseLabel','faceTrack','guideFor','cordLen','autoProps','propDesk','propPhone','propTablet','propDrink','propFood','aBack','bBack','activity','solid','autoScan','twinView','legsHidden','zA','zB','aMirror','bMirror','showCams','memory','scanMode','turntable','mirrorAssist'];
+function saveState(){if(window.__noSave)return;try{
+  const len={};for(const b in scan.len)len[b]=scan.len[b].slice(-400);
+  const set={};for(const id of SETTINGS){const e=$(id);set[id]=e.type==='checkbox'?e.checked:e.value;}
+  localStorage.setItem(SAVE_KEY,JSON.stringify({v:3,faceLevel:FACE.level,savedAt:Date.now(),running,stopped:userStopped,yaw,pitch,legMem,seat:shadow.seat,standing,set,
+    scan:{done:scan.done,len,cov:scan.cov,seen:scan.seen.map(x=>[...x]),rom:scan.rom}}));
+  $('saveInfo').textContent='saved in this browser '+new Date().toLocaleTimeString();
+}catch(e){}}
+function loadState(){try{
+  const d=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');if(!d)return null;
+  for(const id of SETTINGS){const e=$(id);if(d.set?.[id]==null)continue;if(id==='activity'&&(d.v||1)<3)continue;   /* new default: auto */if(e.type==='checkbox')e.checked=d.set[id];else e.value=d.set[id];}
+  if($('activity').value==='driving')$('activity').value='auto';   /* drive mode never survives a reload */
+  document.body.classList.toggle('showcams',$('showCams').checked);
+  if(d.scan){scan.done=d.scan.done;scan.len=d.scan.len||{};if((d.v||1)<2){delete scan.len.pelvis;delete scan.len.shoulders;}scan.cov=d.scan.cov||scan.cov;scan.seen=(d.scan.seen||[]).map(a=>new Set(a));
+    while(scan.seen.length<33)scan.seen.push(new Set());scan.rom=d.scan.rom||{};}
+  if(d.faceLevel!=null){FACE.level=d.faceLevel;}legMem=d.legMem||{};shadow.seat=d.seat||null;standing=d.standing||null;if(d.yaw!=null){yaw=d.yaw;pitch=d.pitch;}
+  if(scan.done){$('scanBtn').textContent='Re-scan body (adds to saved)';$('scanInfo').textContent='Saved scan loaded · coverage '+Math.round(100*coverage().overall)+'%';}
+  if(shadow.seat)$('seatBtn').textContent='Seat marked ✓';
+  return d;
+}catch(e){return null;}}
+$('forgetBtn').onclick=()=>{try{localStorage.removeItem(SAVE_KEY);}catch(e){}
+  Object.assign(scan,{done:false,len:{},cov:new Array(33).fill(0),seen:Array.from({length:33},()=>new Set()),rom:{}});legMem={};
+  $('scanBtn').textContent='Start body scan (~40 s)';$('scanInfo').textContent='Scan: not started';$('saveInfo').textContent='saved scan cleared';};
+setInterval(saveState,5000);addEventListener('beforeunload',saveState);
+// when Claude updates index.html, reload by itself (scan + settings survive via the save above)
+let pageSig=null;
+async function checkUpdate(){try{const t=await (await fetch(location.pathname,{cache:'no-store'})).text();
+  let h=0;for(let i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))|0;const sig=t.length+':'+h;
+  if(pageSig&&sig!==pageSig){saveState();status('Page updated — reloading…','ok');setTimeout(()=>location.replace(location.pathname+'?v='+Date.now()),300);   /* new URL each time: the browser can't hand back a cached old page */}pageSig=sig;}catch(e){}}
+if(location.protocol.startsWith('http')){checkUpdate();setInterval(checkUpdate,3000);}
+const saved=loadState();
+$('recPose').onclick=recordPose;
+try{if(localStorage.getItem('nymbus.token'))$('nymbusToken').placeholder='token saved ✓ (paste to replace)';}catch(e){}
+$('nymbusToken').onchange=()=>{const v=$('nymbusToken').value.trim().replace(/^DTOM_INGEST_TOKEN=/,'');if(!v)return;
+  try{localStorage.setItem('nymbus.token',v);}catch(e){}$('nymbusToken').value='';$('nymbusToken').placeholder='token saved ✓ (paste to replace)';sendQueue();};
+$('sendNymbus').onchange=()=>{if($('sendNymbus').checked)sendQueue();showSend();};
+$('faceLevel').onclick=()=>{if(performance.now()-FACE.t>1000){$('faceLevel').textContent='face not visible — try again';return;}FACE.level=FACE.pitch;$('faceLevel').textContent=`Level set ✓ (laptop camera tilt ≈ ${Math.abs(FACE.level).toFixed(0)}°)`;saveState();};
+$('startBtn').onclick=start;$('stopBtn').onclick=stop;$('calBtn').onclick=()=>calScan('standing');$('afterBtn').onclick=()=>calScan('after');
+$('exportBtn').onclick=exportJSON;$('showCams').onchange=e=>document.body.classList.toggle('showcams',e.target.checked);
+if(!navigator.mediaDevices?.getUserMedia){status('Camera API unavailable here — open via http://localhost (see "Camera won\'t start?").','bad');document.querySelector('details').open=true;}
+else if(!window.isSecureContext){status('Opened as a file — run "python -m http.server 8765" in this folder and open http://localhost:8765','warn');document.querySelector('details').open=true;}
+else listCams().then(()=>{if(!saved?.stopped)start();}).catch(()=>{});
+</script>
+</body>
+</html>
