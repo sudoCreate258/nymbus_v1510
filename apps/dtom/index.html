@@ -149,7 +149,7 @@
       <div class="cam"><video id="vB" playsinline muted></video><canvas class="ov" id="ovB"></canvas><span class="tag" id="tagB">Camera B</span></div>
     </div>
     <div id="camTips" style="margin:6px 0;line-height:1.5"></div>
-    <div class="row muted" id="phoneBox">Phone camera: start the page with start.bat to enable pairing.</div>
+    <div class="row muted" id="phoneBox">Phone cameras: start the page with start.bat (Windows) or start.sh (Linux/macOS) to enable pairing.</div>
     <div class="status" id="status">Pick two different cameras, then Start.</div>
     <div class="row" style="gap:16px">
       <div style="flex:1"><div class="muted">Light A <span id="lA">–</span></div><div class="meter"><i id="mA"></i></div></div>
@@ -733,13 +733,15 @@ function luma(c){
   c.ltxt.textContent=(l<.25?'too dark — add front light':l<.4?'dim':l>.85?'too bright':'good')+(c.boost?` · night boost ×${c.boost}`:'');
 }
 let frame=0,primaryScore={A:0,B:0,C:0};
-const PHONE={key:'C',tag:{classList:{toggle(){}}}};let phone=null;
+const PHONES={};   // phone cameras C, D, E ... (each paired phone streams joints only)
+const phoneCam=k=>PHONES[k]||(PHONES[k]={c:{key:k,tag:{classList:{toggle(){}}}},d:null});
 async function phoneInfo(){try{const r=await fetch('/api/info',{cache:'no-store'});if(!r.ok)return;const j=await r.json();
-  const fresh=phone&&performance.now()-phone.t<1500;
-  $('phoneBox').innerHTML=`Phone camera (C): on the phone open <b>${j.phone_url}</b> · code <b>${j.code}</b> · ${fresh?'<span class="ok">streaming</span>':j.paired?'paired, waiting for joints':'not paired'}`;}catch(e){}}
+  const list=(j.phones||[]).map(p=>`${p.cam}: ${p.age!=null&&p.age<2?'<span class="ok">streaming</span>':'paired, waiting'}`).join(' · ');
+  $('phoneBox').innerHTML=`Phone cameras: on each phone open <b>${j.phone_url}</b> · code <b>${j.code}</b> · ${list||'none paired yet'} <span class="muted">(each phone becomes the next camera: C, D, E …)</span>`;}catch(e){}}
 setInterval(phoneInfo,2000);phoneInfo();
-try{const es=new EventSource('/api/stream');es.onmessage=e=>{const d=JSON.parse(e.data);if(d.world&&d.img)phone={t:performance.now(),
-  world:d.world.map(([x,y,z])=>({x,y,z})),img:d.img.map(([x,y,z,v])=>({x,y,z,visibility:v}))};};}catch(e){}
+try{const es=new EventSource('/api/stream');es.onmessage=e=>{const d=JSON.parse(e.data);
+  const all=d.phones||(d.world?{C:d}:{});for(const [k,p] of Object.entries(all)){if(!p||!p.world||!p.img)continue;
+    phoneCam(k).d={t:performance.now(),world:p.world.map(([x,y,z])=>({x,y,z})),img:p.img.map(([x,y,z,v])=>({x,y,z,visibility:v}))};}};}catch(e){}
 function loop(){
   if(!running)return;
   try{loopBody();}catch(e){console.error(e);status('Twin error (still running): '+e.message,'warn');}
@@ -778,15 +780,16 @@ function loopBody(){
     }
     if(frame%15===0)luma(c);
   }
-  if(phone&&now-phone.t<600){const vis=phone.img.reduce((a,p)=>a+(p.visibility??1),0)/phone.img.length;
-    views.push({c:PHONE,img:phone.img,world:phone.world,vis,...camAngles(phone.world,phone.img)});}
+  for(const P of Object.values(PHONES)){const ph=P.d;if(!ph||now-ph.t>600)continue;const vis=ph.img.reduce((a,p)=>a+(p.visibility??1),0)/ph.img.length;
+    if(vis<.35)continue;   // a phone that lost you drops out instead of dragging the twin
+    views.push({c:P.c,img:ph.img,world:ph.world,vis,...camAngles(ph.world,ph.img)});}
   alignViews(views);
   // primary camera = best overall visibility, with hysteresis
-  for(const c of [...CAMS,PHONE]){const v=views.find(x=>x.c===c);primaryScore[c.key]=primaryScore[c.key]*.9+(v?v.vis:0)*.1;}
+  for(const c of [...CAMS,...Object.values(PHONES).map(p=>p.c)]){const v=views.find(x=>x.c===c);primaryScore[c.key]=(primaryScore[c.key]||0)*.9+(v?v.vis:0)*.1;}
   const best=Object.keys(primaryScore).reduce((a,b)=>primaryScore[b]>primaryScore[a]?b:a,'A');
   if(!primary||primaryScore[best]>primaryScore[primary]+0.05)primary=best;
   CAMS.forEach(c=>c.tag.classList.toggle('primary',c.key===primary));
-  $('primary').textContent=views.length?(primary==='C'?'C (phone)':primary):'–';
+  $('primary').textContent=views.length?(PHONES[primary]?primary+' (phone)':primary):'–';
 
   // fuse angles per joint by visibility
   const fused={},src={};

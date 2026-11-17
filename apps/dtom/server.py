@@ -14,7 +14,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CERTS = HERE / "certs"
 CODE = f"{secrets.randbelow(900000) + 100000}"
-STATE = {"paired": False, "phone_ip": None, "last": None, "seq": 0}
+STATE = {"seq": 0}
+PHONES = {}          # phone IP -> {"cam": "C", "last": {...}}; up to 6 phones (C..H)
+LETTERS = "CDEFGH"
 LOCK = threading.Condition()
 MAX_BODY = 64 * 1024
 
@@ -38,7 +40,7 @@ def ensure_cert(ip):
     subj = "/CN=nymbus-twin-local"
     san = f"subjectAltName=IP:{ip},IP:127.0.0.1,DNS:localhost"
     local = os.environ.get("LOCALAPPDATA", "")
-    candidates = ["openssl",
+    candidates = ["openssl",  # Linux/macOS: system openssl
                   os.path.join(local, r"Programs\Git\usr\bin\openssl.exe"),
                   os.path.join(local, r"Programs\Git\mingw64\bin\openssl.exe"),
                   r"C:\Program Files\Git\usr\bin\openssl.exe",
@@ -105,8 +107,12 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/info":
             if not self.local():
                 return self.send_error(403)
+            now = time.time()
+            with LOCK:
+                phones = [{"cam": p["cam"], "ip": ip, "age": round(now - p["last"]["t"], 1) if p["last"] else None}
+                          for ip, p in sorted(PHONES.items(), key=lambda kv: kv[1]["cam"])]
             return self.json(200, {"code": CODE, "phone_url": f"https://{IP}:8443/phone",
-                                   "paired": STATE["paired"], "phone_ip": STATE["phone_ip"]})
+                                   "paired": bool(phones), "phones": phones})
         if path == "/api/stream":
             if not self.local():
                 return self.send_error(403)
@@ -119,8 +125,9 @@ class Handler(SimpleHTTPRequestHandler):
                 while True:
                     with LOCK:
                         LOCK.wait_for(lambda: STATE["seq"] != seen, timeout=5)
-                        seen, last = STATE["seq"], STATE["last"]
-                    payload = json.dumps(last) if last else "{}"
+                        seen, now = STATE["seq"], time.time()
+                        cams = {p["cam"]: p["last"] for p in PHONES.values() if p["last"] and now - p["last"]["t"] < 2}
+                    payload = json.dumps({"phones": cams})
                     self.wfile.write(f"data: {payload}\n\n".encode())
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, ssl.SSLError, OSError):
@@ -135,12 +142,17 @@ class Handler(SimpleHTTPRequestHandler):
         ip = self.client_address[0]
         if path == "/api/pair":
             with LOCK:
-                STATE.update(paired=True, phone_ip=ip)
-            print(f"Phone paired from {ip}")
-            return self.json(200, {"ok": True})
+                if ip not in PHONES:
+                    free = [c for c in LETTERS if c not in {p["cam"] for p in PHONES.values()}]
+                    if not free:
+                        return self.json(409, {"ok": False, "error": "already 6 phones paired"})
+                    PHONES[ip] = {"cam": free[0], "last": None}
+                cam = PHONES[ip]["cam"]
+            print(f"Phone paired from {ip} as camera {cam}")
+            return self.json(200, {"ok": True, "cam": cam})
         if path == "/api/landmarks":
-            if STATE["phone_ip"] not in (None, ip):
-                return self.json(409, {"ok": False, "error": "another phone is paired"})
+            if ip not in PHONES:
+                return self.json(409, {"ok": False, "error": "pair this phone first"})
             world, img = data.get("world"), data.get("img")
             if not (isinstance(world, list) and isinstance(img, list) and len(world) == 33 and len(img) == 33):
                 return self.json(400, {"ok": False})
@@ -150,8 +162,8 @@ class Handler(SimpleHTTPRequestHandler):
             except (TypeError, ValueError):
                 return self.json(400, {"ok": False})
             with LOCK:
-                STATE["last"] = {"t": time.time(), "world": world, "img": img,
-                                 "facing": str(data.get("facing", ""))[:12]}
+                PHONES[ip]["last"] = {"t": time.time(), "world": world, "img": img,
+                                      "facing": str(data.get("facing", ""))[:12]}
                 STATE["seq"] += 1
                 LOCK.notify_all()
             return self.json(200, {"ok": True})
@@ -177,7 +189,8 @@ if __name__ == "__main__":
     print(f"  Phone page : https://{IP}:8443/phone   (same Wi-Fi)")
     print(f"  Pair code  : {CODE}\n")
     print("  The phone will warn about the certificate (it is self-signed on this PC):")
-    print("  tap Advanced -> Proceed. If Windows asks about the firewall, allow PRIVATE networks only.\n")
+    print("  tap Advanced -> Proceed. Each phone that pairs becomes the next camera (C, D, E ...).")
+    print("  If the firewall asks, allow PRIVATE networks only (Ubuntu: sudo ufw allow from 192.168.0.0/16 to any port 8443).\n")
     try:
         while True:
             time.sleep(3600)
