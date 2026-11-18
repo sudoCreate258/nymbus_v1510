@@ -57,7 +57,8 @@ async function start(){
   }catch(e){status('Could not start: '+e.message,'bad');$('go').disabled=false;}
 }
 function stop(){running=false;stream?.getTracks().forEach(t=>t.stop());wake?.release?.();$('go').disabled=false;$('stop').disabled=true;status('Stopped.');}
-let lastTs=-1;
+let lastTs=-1,seq=0,off=null,bestRtt=1e9;   // off = PC clock minus this device's clock, from the fastest round trip seen
+function clockSample(sent,srvT){const now=Date.now(),rtt=now-sent;if(rtt<=bestRtt*1.5||off==null){if(rtt<bestRtt)bestRtt=rtt;off=srvT-(sent+rtt/2);}return rtt;}
 async function loop(){
   if(!running)return;
   const now=performance.now();
@@ -70,10 +71,11 @@ async function loop(){
       g.fillStyle='#7ed957';for(const p of L){if((p.visibility??1)<.5)continue;g.beginPath();g.arc(p.x*c.width,p.y*c.height,6,0,7);g.fill();}
       if(now-lastSend>100){
         lastSend=now;
-        post('/api/landmarks',{facing:$('facing').value,
+        const tCap=Date.now(),sq=++seq;
+        post('/api/landmarks',{facing:$('facing').value,seq:sq,t_cap:tCap,off:off==null?null:Math.round(off),rtt:bestRtt<1e9?bestRtt:null,
           world:W.map(p=>[+p.x.toFixed(4),+p.y.toFixed(4),+p.z.toFixed(4)]),
           img:L.map(p=>[+p.x.toFixed(4),+p.y.toFixed(4),+p.z.toFixed(4),+(p.visibility??1).toFixed(3)])})
-        .then(r=>{if(r.ok){sent++;fails=0;if(sent%20===0)status(`Streaming joints to the PC · ${sent} updates sent`,'ok');}else{fails++;status('PC refused data ('+r.status+') — re-check the code.','bad');}})
+        .then(async r=>{if(r.ok){try{const j=await r.json();if(j.t)clockSample(tCap,j.t);}catch(e){}sent++;fails=0;if(sent%20===0)status(`Streaming joints to the PC · ${sent} updates sent`,'ok');}else{fails++;status('PC refused data ('+r.status+') — re-check the code.','bad');}})
         .catch(()=>{fails++;if(fails>5)status('Lost connection to the PC — same Wi-Fi? server still running?','warn');});
       }
     }
@@ -81,6 +83,7 @@ async function loop(){
   requestAnimationFrame(loop);
 }
 $('go').onclick=start;$('stop').onclick=stop;
+if(location.hostname==='localhost')$('code')&&($('code').placeholder='code from the PC (USB link)');
 if(!window.isSecureContext)status('Open this page with https:// (the address shown on the PC).','bad');
 </script>
 </body>

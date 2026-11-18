@@ -162,11 +162,16 @@ class Handler(SimpleHTTPRequestHandler):
             except (TypeError, ValueError):
                 return self.json(400, {"ok": False})
             with LOCK:
+                num = lambda k: data.get(k) if isinstance(data.get(k), (int, float)) else None
                 PHONES[ip]["last"] = {"t": time.time(), "world": world, "img": img,
-                                      "facing": str(data.get("facing", ""))[:12]}
+                                      "facing": str(data.get("facing", ""))[:12],
+                                      # timing for the network study: capture time (device clock), device->PC clock offset,
+                                      # sequence number, best round trip, and PC receive time (all ms)
+                                      "seq": num("seq"), "t_cap": num("t_cap"), "off": num("off"), "rtt": num("rtt"),
+                                      "t_recv": time.time() * 1000}
                 STATE["seq"] += 1
                 LOCK.notify_all()
-            return self.json(200, {"ok": True})
+            return self.json(200, {"ok": True, "t": time.time() * 1000})
         return self.send_error(404)
 
 

@@ -107,6 +107,10 @@
         <option>phone in lap</option><option>phone at eye level</option><option>reaching for mouse</option><option>standing neutral</option><option>standing on phone</option>
         <option>squat</option><option>hip hinge</option><option>reach overhead</option><option>other</option></select>
       <button id="recPose">Record posture (3 s)</button> <span class="muted" id="poseInfo">0 postures recorded</span></div>
+    <div class="row"><button id="romBtn">Free stretch (3 min)</button> <select id="romLabel"><option>morning</option><option>evening</option><option>after desk</option><option>after training</option><option>other</option></select>
+      <span class="muted" id="romInfo">Move however feels tight. dtom keeps the furthest position you hold for 1 s at each joint.</span></div>
+    <div class="row"><button id="calExport">Export calibration</button> <button id="calImport">Import calibration</button><input type="file" id="calFile" accept=".json,application/json" style="display:none">
+      <span class="muted" id="calInfo">Moves your scan, tilt, upright and settings to another browser or machine (no token, no minutes).</span></div>
     <div class="row"><span class="muted">View</span>
       <button data-view="front">Front</button><button data-view="quarter">3/4</button><button data-view="side">Side</button><button data-view="back">Back</button><button data-view="top">Top</button>
       <button id="forgetBtn" title="clears the scan and leg memory saved in this browser">Forget saved scan</button>
@@ -149,6 +153,7 @@
       <div class="cam"><video id="vB" playsinline muted></video><canvas class="ov" id="ovB"></canvas><span class="tag" id="tagB">Camera B</span></div>
     </div>
     <div id="camTips" style="margin:6px 0;line-height:1.5"></div>
+    <div class="row muted"><label>phone link (for the network study) <select id="netLink"><option value="usb-adb">USB, adb reverse (T1)</option><option value="usb-tether">USB tether (T2)</option><option value="wifi" selected>Wi-Fi (T3)</option><option value="hotspot">mobile hotspot (T4)</option><option value="cloud">cloud relay (T5)</option></select></label></div>
     <div class="row muted" id="phoneBox">Phone cameras: start the page with start.bat (Windows) or start.sh (Linux/macOS) to enable pairing.</div>
     <div class="status" id="status">Pick two different cameras, then Start.</div>
     <div class="row" style="gap:16px">
@@ -448,6 +453,7 @@ function reliefStep(M,fwd,dt){
   if(seen(15)&&seen(16)&&M[15].y<M[0].y-.05&&M[16].y<M[0].y-.05)act['stretch:shL']=act['stretch:shR']=act['stretch:back']=1;   // arms overhead
   const tv={x:sh.x-hp.x,y:sh.y-hp.y,z:sh.z-hp.z};if(tv.x*fwd.x+tv.z*fwd.z<-.12&&!M.seated)act['stretch:back']=1;   // leaning back, standing
   const sd=Math.atan2(M[11].z-M[12].z,M[11].x-M[12].x)-Math.atan2(M[23].z-M[24].z,M[23].x-M[24].x),tw=Math.abs(Math.atan2(Math.sin(sd),Math.cos(sd)))*180/Math.PI;
+  RELIEF.twist=Math.atan2(Math.sin(sd),Math.cos(sd))*180/Math.PI;
   if(tw>30)act['stretch:back']=1;                                                            // seated twist
   for(const k of Object.keys(act)){const c=RELIEF.cur[k]||(RELIEF.cur[k]={t0:now,s:0});c.s+=dt;c.seen=now;
     const r=k.split(':')[1];if(strain.fat[r]!=null)strain.fat[r]*=Math.exp(-dt/60);}            // easing off a held load lets it recover faster
@@ -459,10 +465,67 @@ function reliefStep(M,fwd,dt){
 }
 function reliefLine(){const L=RELIEF.last;if(!L||performance.now()-L.at>20000)return null;
   return [`relief: ${L.kind==='massage'?'massaging':'stretching'} your ${RNAME[L.region]||L.region} for ${L.s} s — noted as tension there`,'rgba(108,196,255,.95)'];}
+// ---- free stretch: range of motion you actually reach and hold (>= 1 s), per joint and side; stiffness = less than your
+// baseline (median of your first 3 sessions) or a left/right gap. Webcam accuracy is about +/-5-8 deg, so only >=10 deg counts.
+const ROM_KEY='nymbus.rom.v1',ROM_NORM={shoulderL:180,shoulderR:180,hipFlexL:120,hipFlexR:120,kneeFlexL:135,kneeFlexR:135,neckRotL:70,neckRotR:70,twistL:45,twistR:45,forwardBend:90};
+const ROM_NAME={shoulder:'shoulder raise',hipFlex:'hip flexion',kneeFlex:'knee bend',neckRot:'neck rotation',twist:'trunk twist',forwardBend:'forward bend'};
+const ROM={on:false,t0:0,win:{},best:{},last:null,showUntil:0};
+const romSessions=()=>{try{return JSON.parse(localStorage.getItem(ROM_KEY)||'[]');}catch(e){return [];}};
+function romValues(){const f=lastFused||{},v={},fr=performance.now()-FACE.t<800;
+  if(f['L shoulder']!=null)v.shoulderL=f['L shoulder'];if(f['R shoulder']!=null)v.shoulderR=f['R shoulder'];
+  if(f['L hip']!=null)v.hipFlexL=180-f['L hip'];if(f['R hip']!=null)v.hipFlexR=180-f['R hip'];
+  if(f['L knee']!=null)v.kneeFlexL=180-f['L knee'];if(f['R knee']!=null)v.kneeFlexR=180-f['R knee'];
+  if(fr&&FACE.yaw!=null){if(FACE.yaw>0)v.neckRotR=FACE.yaw;else v.neckRotL=-FACE.yaw;}
+  if(RELIEF.twist!=null){if(RELIEF.twist>0)v.twistR=RELIEF.twist;else v.twistL=-RELIEF.twist;}
+  if(strain.last&&performance.now()-strain.last<800&&!strain.noSide&&strain.metric?.back!=null)v.forwardBend=strain.metric.back;
+  return v;}
+function romStep(){if(!ROM.on)return;const now=performance.now(),v=romValues();
+  for(const [k,x] of Object.entries(v)){if(!isFinite(x))continue;const w=ROM.win[k]||(ROM.win[k]=[]);w.push([now,x]);while(w.length&&now-w[0][0]>1000)w.shift();
+    if(w.length>=5&&now-w[0][0]>800){const held=Math.min(...w.map(p=>p[1]));if(!(k in ROM.best)||held>ROM.best[k])ROM.best[k]=held;}}   // held: the lowest value across the last 1 s
+  const left=Math.max(0,180-(now-ROM.t0)/1000);$('romInfo').textContent=`Free stretch: ${Math.ceil(left)} s left · joints with a held range: ${Object.keys(ROM.best).length}`;
+  if(left<=0)romStop();}
+function romBaseline(){const S=romSessions().slice(0,3);if(S.length<3)return null;const b={};
+  for(const k of Object.keys(ROM_NORM)){const xs=S.map(s=>s.rom[k]).filter(x=>x!=null).sort((a,c)=>a-c);if(xs.length)b[k]=xs[Math.floor(xs.length/2)];}return b;}
+function romReport(sess){const r=sess.rom,b=romBaseline(),out=[],flags=[];
+  for(const base of ['shoulder','hipFlex','kneeFlex','neckRot','twist']){const L=r[base+'L'],R=r[base+'R'];
+    const n=ROM_NORM[base+'L'];   // only compare sides you actually worked: both past 40% of a typical range
+    if(L!=null&&R!=null&&L>=.4*n&&R>=.4*n&&Math.abs(L-R)>=10)flags.push(`${ROM_NAME[base]}: left ${Math.round(L)}° vs right ${Math.round(R)}° (${Math.round(Math.abs(L-R))}° gap)`);}
+  if(b)for(const [k,x] of Object.entries(r)){if(b[k]!=null&&x<=b[k]-10){const base=k.replace(/[LR]$/,''),side=k.endsWith('L')?'left ':k.endsWith('R')?'right ':'';
+    flags.push(`${side}${ROM_NAME[base]||k} ${Math.round(b[k]-x)}° below your baseline`);}}
+  const hf=Math.max(r.hipFlexL??0,r.hipFlexR??0);
+  if(r.forwardBend!=null&&r.forwardBend>45&&hf&&hf<70)flags.push('forward reach came mostly from the low back, not the hips: hamstrings likely tight');
+  if((r.shoulderL??181)<150||(r.shoulderR??181)<150)flags.push('arms did not reach overhead (<150°): shoulders or upper back stiff');
+  return {flags,baseline:!!b};}
+function romStop(){if(!ROM.on)return;ROM.on=false;$('romBtn').textContent='Free stretch (3 min)';
+  const rom=Object.fromEntries(Object.entries(ROM.best).map(([k,x])=>[k,Math.round(x)]));
+  if(Object.keys(rom).length<3){$('romInfo').textContent='Not enough joints were seen holding a stretch. Make sure a camera sees you head to knees, then try again.';return;}
+  const sess={t:new Date().toISOString(),label:$('romLabel').value,rom};const S=romSessions();S.push(sess);
+  try{localStorage.setItem(ROM_KEY,JSON.stringify(S.slice(-90)));}catch(e){}
+  const rep=romReport(sess);ROM.last={...sess,...rep};ROM.showUntil=performance.now()+60000;
+  if(MINUTE.start)MINUTE.free_stretch=sess;else{resetMinute();MINUTE.free_stretch=sess;}
+  $('romInfo').textContent=`Saved (${S.length} sessions${S.length<3?`, baseline after ${3-S.length} more`:''}). `+(rep.flags.length?rep.flags.join(' · '):'No stiffness flags.');}
+function romLines(){if(ROM.on)return [['free stretch running: move into what feels tight and hold each position for 1 s','rgba(108,196,255,.95)']];
+  const L=ROM.last;if(!L||performance.now()>ROM.showUntil)return [];
+  return [['free stretch result:','rgba(108,196,255,.95)',true],...Object.entries(L.rom).map(([k,x])=>[`  ${k}: ${x}°`,'rgba(238,243,238,.8)']),
+    ...(L.flags.length?L.flags.map(t=>['• '+t,'rgba(255,179,71,.95)']):[['• no stiffness flags','rgba(126,217,87,.9)']])];}
+$('romBtn').onclick=()=>{if(ROM.on){romStop();return;}ROM.on=true;ROM.t0=performance.now();ROM.win={};ROM.best={};$('romBtn').textContent='Stop free stretch';};
+setInterval(()=>{try{romStep();}catch(e){}},50);
+// ---- calibration export / import (no token, no minutes, no queue)
+const CAL_KEYS=['nymbus.twin.v1','nymbus.carlevel','nymbus.seatlevel',ROM_KEY];
+$('calExport').onclick=()=>{const o={schema:'nymbus.dtom_calibration.v1',exported_at:new Date().toISOString(),keys:{}};
+  for(const k of CAL_KEYS){const v=localStorage.getItem(k);if(v!=null)o.keys[k]=v;}
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:'application/json'}));a.download='dtom-calibration.json';a.click();
+  $('calInfo').textContent=`Exported ${Object.keys(o.keys).length} items. Keep the file private: it contains your body measurements.`;};
+$('calImport').onclick=()=>$('calFile').click();
+$('calFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const o=JSON.parse(await f.text());
+    if(o.schema!=='nymbus.dtom_calibration.v1'||typeof o.keys!=='object')throw new Error('not a dtom calibration file');
+    let n=0;for(const [k,v] of Object.entries(o.keys))if(CAL_KEYS.includes(k)&&typeof v==='string'){JSON.parse(v);localStorage.setItem(k,v);n++;}
+    $('calInfo').textContent=`Imported ${n} items. Reloading…`;window.__noSave=true;setTimeout(()=>location.replace(location.pathname),600);}
+  catch(err){$('calInfo').textContent='Import failed: '+err.message;}};
 function strainLines(){
   const p=strain.pct,f=v=>v.toFixed(0)+'%',col=v=>v<10?'rgba(126,217,87,.9)':v<20?'rgba(255,179,71,.95)':'rgba(255,110,100,.95)';
   const worst=Math.max(p.neck,p.back,p.shL,p.shR),out=strain.noSide?[['neck & low-back load: need a camera to see your side (hips + shoulders)','rgba(238,243,238,.6)']]:[];out.push([`muscle load (est., % of max): neck ${f(p.neck)} · low back ${f(p.back)} · L shoulder ${f(p.shL)} · R shoulder ${f(p.shR)}`+(strain.desk?' (forearms assumed resting on desk)':''),col(worst)]);
-  const rl=reliefLine();if(rl)out.push(rl);
+  out.push(...romLines());const rl=reliefLine();if(rl)out.push(rl);
   const foc=FOCUS.region;
   if(p.neck>=10&&foc!=='neck')out.push(['neck extensors / upper traps working to hold your head forward — ears back over shoulders',col(p.neck)]);
   if((p.shL>=10||p.shR>=10)&&foc!=='shL'&&foc!=='shR')out.push(['front shoulder / upper trap holding your arm out — bring the keyboard/mouse closer or rest your forearms',col(Math.max(p.shL,p.shR))]);
@@ -591,7 +654,7 @@ function actv(){const v=$('activity').value;if(v!=='auto')return v;return lastPo
 const REG=['neck','back','shL','shR'],COACH_REGION={head:'neck',lean:'back',shoulders:null,hips:null},NYMBUS_URL='http://127.0.0.1:8000/api/twin/minute';
 let lastUsing=[];const MINUTE={start:null,last:0};
 function resetMinute(){const z=()=>({neck:0,back:0,shL:0,shR:0}),nul=()=>({neck:null,back:null,shL:null,shR:null});
-  Object.assign(MINUTE,{relief:[],drove:false,start:new Date(Date.now()),frames:0,sideFrames:0,sit:0,stand:0,sum:z(),n:z(),max:nul(),fat:nul(),samePos:null,yawn0:FACE.yawns,
+  Object.assign(MINUTE,{free_stretch:null,relief:[],drove:false,start:new Date(Date.now()),frames:0,sideFrames:0,sit:0,stand:0,sum:z(),n:z(),max:nul(),fat:nul(),samePos:null,yawn0:FACE.yawns,
     faceN:0,brow:0,pitch:0,look:{screen:0,down:0,away:0},using:{laptop:0,phone:0},events:[],cams:new Set()});}
 function minuteEvent(type,region){if(!MINUTE.start)resetMinute();MINUTE.events.push({t:new Date(Date.now()).toISOString(),type,region:region??null});}
 function tickMinute(){
@@ -622,7 +685,7 @@ function flushMinute(){
     face:{blinks_per_min:fs?FACE.blinks.length:null,yawns:fs?Math.max(0,FACE.yawns-M.yawn0):null,brow_tension:fs?Math.round(100*M.brow/M.faceN)/100:null,
       looking_pct:Object.fromEntries(['screen','down','away'].map(k=>[k,lookT?Math.round(100*M.look[k]/lookT):null])),head_pitch_avg:fs?r(M.pitch/M.faceN):null},
     using_s:{laptop:Math.round(M.using.laptop),phone:Math.round(M.using.phone)},events:M.events,
-    activity:M.drove?'driving':actv(),relief:M.relief||[],
+    activity:M.drove?'driving':actv(),relief:M.relief||[],net:netMinute(),free_stretch:M.free_stretch||null,
     lower_body:{seated_min:strain.sitStart?Math.round((Date.now()-strain.sitStart)/6000)/10:0,hip_flexor_pct:Math.round(LOWER.pct.hipflex),legs_still_pct:LOWER.pct.calf==null?null:Math.round(LOWER.pct.calf),
       knees_locked_s:Math.round(LOWER.m.knee_locked_s),hip_hang_s:Math.round(LOWER.m.hip_hang_s),slumped_s:Math.round(LOWER.m.slumped_s||0),rounded_s:Math.round(LOWER.m.rounded_s||0)},stretch_s:{knee:Math.round(STRETCH.m.knee),elbow:Math.round(STRETCH.m.elbow),neck:Math.round(STRETCH.m.neck)}};
   if(M.drove&&DRIVE.m){doc.drive={...DRIVE.m,max_glance_s:+DRIVE.m.max_glance_s.toFixed(1),offroad_s:Math.round(DRIVE.m.offroad_s)};DRIVE.m=driveZero();}
@@ -668,10 +731,13 @@ function detectObjects(c,now){
     if(lm)for(const [i,sd] of [[15,'L'],[16,'R'],[19,'L'],[20,'R']]){const q=lm[i];if((q.visibility??0)<.4)continue;
       if(q.x>x0-.04&&q.x<x1+.04&&q.y>y0-.04&&q.y<y1+.04){hand=mir?(sd==='L'?'R':'L'):sd;break;}}
     seenObj[kind]={t:performance.now(),hand,cam:c.key,label:name};}
-  // bystanders: any person box that is not you (your skeleton's centre is not inside it) gets covered in the preview
-  const me=lm?(()=>{const v=[0,11,12,23,24].map(i=>lm[i]).filter(q=>(q.visibility??0)>.4);if(!v.length)return null;
-    return {x:v.reduce((a,q)=>a+q.x,0)/v.length,y:v.reduce((a,q)=>a+q.y,0)/v.length};})():null;
-  c.others={t:performance.now(),boxes:people.filter(([a,b2,cc,d2])=>!(me&&me.x>a&&me.x<cc&&me.y>b2&&me.y<d2)||(!me&&people.length>1))};
+  // bystanders: a person box counts as you if most of your own visible joints (or your face) sit inside it.
+  // If dtom can't see you this frame it covers nobody: never black out the user by mistake.
+  const mine=lm?[0,2,5,7,8,11,12,13,14,15,16,23,24].map(i=>lm[i]).filter(q=>q&&(q.visibility??0)>.4):[];
+  const isMe=([a,b2,cc,d2])=>{const mx=(cc-a)*.12,my=(d2-b2)*.12,inn=mine.filter(q=>q.x>a-mx&&q.x<cc+mx&&q.y>b2-my&&q.y<d2+my).length;
+    return mine.length&&inn>=Math.max(1,mine.length*.4);};
+  const area=([a,b2,cc,d2])=>(cc-a)*(d2-b2),meBox=people.filter(isMe).sort((p,q)=>area(q)-area(p))[0];
+  c.others={t:performance.now(),boxes:mine.length<3?[]:people.filter(p=>p!==meBox&&!isMe(p))};
 }
 async function start(){
   userStopped=false;$('startBtn').disabled=true;
@@ -736,12 +802,28 @@ let frame=0,primaryScore={A:0,B:0,C:0};
 const PHONES={};   // phone cameras C, D, E ... (each paired phone streams joints only)
 const phoneCam=k=>PHONES[k]||(PHONES[k]={c:{key:k,tag:{classList:{toggle(){}}}},d:null});
 async function phoneInfo(){try{const r=await fetch('/api/info',{cache:'no-store'});if(!r.ok)return;const j=await r.json();
-  const list=(j.phones||[]).map(p=>`${p.cam}: ${p.age!=null&&p.age<2?'<span class="ok">streaming</span>':'paired, waiting'}`).join(' · ');
+  const list=(j.phones||[]).map(p=>`${p.cam}: ${p.age!=null&&p.age<2?'<span class="ok">streaming</span>'+netText(p.cam):'paired, waiting'}`).join(' · ');
   $('phoneBox').innerHTML=`Phone cameras: on each phone open <b>${j.phone_url}</b> · code <b>${j.code}</b> · ${list||'none paired yet'} <span class="muted">(each phone becomes the next camera: C, D, E …)</span>`;}catch(e){}}
 setInterval(phoneInfo,2000);phoneInfo();
 try{const es=new EventSource('/api/stream');es.onmessage=e=>{const d=JSON.parse(e.data);
   const all=d.phones||(d.world?{C:d}:{});for(const [k,p] of Object.entries(all)){if(!p||!p.world||!p.img)continue;
-    phoneCam(k).d={t:performance.now(),world:p.world.map(([x,y,z])=>({x,y,z})),img:p.img.map(([x,y,z,v])=>({x,y,z,visibility:v}))};}};}catch(e){}
+    const P=phoneCam(k);P.d={t:performance.now(),world:p.world.map(([x,y,z])=>({x,y,z})),img:p.img.map(([x,y,z,v])=>({x,y,z,visibility:v}))};
+    netSample(k,p);}};}catch(e){}
+// ---- network study (P1): per phone camera, delay from capture on the device to arrival in this page, delivery rate, losses ----
+const NET={};
+function netSample(k,p){if(p.seq==null||p.t_cap==null)return;const N=NET[k]||(NET[k]={lat:[],srv:[],seqs:0,gaps:0,lastSeq:null,t0:Date.now(),n:0,min:{lat:[],gaps:0,n:0}});
+  if(N.lastSeq===p.seq)return;                                  // same message re-sent by the stream: count once
+  if(N.lastSeq!=null&&p.seq>N.lastSeq+1){N.gaps+=p.seq-N.lastSeq-1;N.min.gaps+=p.seq-N.lastSeq-1;}
+  N.lastSeq=p.seq;N.n++;N.min.n++;
+  if(p.off!=null){const cap=p.t_cap+p.off,e2e=Date.now()-cap,srv=p.t_recv!=null?p.t_recv-cap:null;
+    if(e2e>-50&&e2e<10000){N.lat.push(e2e);N.min.lat.push(e2e);if(N.lat.length>300)N.lat.shift();}
+    if(srv!=null&&srv>-50&&srv<10000){N.srv.push(srv);if(N.srv.length>300)N.srv.shift();}}}
+const pct=(a,q)=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.floor(q*s.length))];};
+function netText(k){const N=NET[k];if(!N||!N.lat.length)return '';const hz=N.n/Math.max(1,(Date.now()-N.t0)/1000),loss=100*N.gaps/Math.max(1,N.gaps+N.n);
+  return ` · delay ${Math.round(pct(N.lat,.5))} ms (p95 ${Math.round(pct(N.lat,.95))}) · ${hz.toFixed(1)}/s · lost ${loss.toFixed(1)}%`;}
+function netMinute(){const out={};for(const [k,N] of Object.entries(NET)){const L=N.min.lat;
+    out[k]={link:$('netLink')?.value||'unknown',n:N.min.n,lost:N.min.gaps,p50_ms:L.length?Math.round(pct(L,.5)):null,p95_ms:L.length?Math.round(pct(L,.95)):null};N.min={lat:[],gaps:0,n:0};}
+  return out;}
 function loop(){
   if(!running)return;
   try{loopBody();}catch(e){console.error(e);status('Twin error (still running): '+e.message,'warn');}
@@ -1674,7 +1756,7 @@ function exportJSON(){
   const out={schema:'nymbus.twin_capture.v1',exported_at:new Date().toISOString(),
     cameras:CAMS.filter(c=>!c.off).map(c=>c.sel.selectedOptions[0]?.textContent||c.key),
     estimate:'3D joint angles fused from up to two webcams; not a clinical measurement',
-    note:$('note').value||null,standing_model:standing,after_scan:after,seat:shadow.seat,
+    note:$('note').value||null,free_stretch_sessions:romSessions(),standing_model:standing,after_scan:after,seat:shadow.seat,
     body_model:scan.done?{bone_lengths_m:Object.fromEntries(Object.keys(BONE_DEF).map(b=>[b,median(scan.len[b])&&Math.round(median(scan.len[b])*1000)/1000])),
       coverage:Object.fromEntries(Object.entries(coverage()).map(([k,v])=>[k,Math.round(v*100)/100])),
       range_of_motion_deg:Object.fromEntries(Object.entries(scan.rom).map(([k,r])=>[k,{min:Math.round(r.min),max:Math.round(r.max)}]))}:null,
@@ -1683,7 +1765,7 @@ function exportJSON(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,1)],{type:'application/json'}));
   a.download='twin-capture-'+new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')+'.json';a.click();URL.revokeObjectURL(a.href);
 }
-const SAVE_KEY='nymbus.twin.v1',SETTINGS=['blurOthers','speakOn','aTurn','bTurn','night','faceCam','aFlip','bFlip','sendNymbus','focusMode','avatar','massKg','strainView','poseLabel','faceTrack','guideFor','cordLen','autoProps','propDesk','propPhone','propTablet','propDrink','propFood','aBack','bBack','activity','solid','autoScan','twinView','legsHidden','zA','zB','aMirror','bMirror','showCams','memory','scanMode','turntable','mirrorAssist'];
+const SAVE_KEY='nymbus.twin.v1',SETTINGS=['netLink','blurOthers','speakOn','aTurn','bTurn','night','faceCam','aFlip','bFlip','sendNymbus','focusMode','avatar','massKg','strainView','poseLabel','faceTrack','guideFor','cordLen','autoProps','propDesk','propPhone','propTablet','propDrink','propFood','aBack','bBack','activity','solid','autoScan','twinView','legsHidden','zA','zB','aMirror','bMirror','showCams','memory','scanMode','turntable','mirrorAssist'];
 function saveState(){if(window.__noSave)return;try{
   const len={};for(const b in scan.len)len[b]=scan.len[b].slice(-400);
   const set={};for(const id of SETTINGS){const e=$(id);set[id]=e.type==='checkbox'?e.checked:e.value;}
